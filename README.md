@@ -8,15 +8,30 @@
 
 *Draft it right the first time.*
 
-**UKIS 2026 · ITDA, Government of Uttarakhand**
+**UKIS 2026 · ITDA, Government of Uttarakhand · Problem: DPR/RFP Drafting Assistant**
 
 ![engine](https://img.shields.io/badge/engine-LangGraph-6C4AB6?style=flat-square)
 ![llm](https://img.shields.io/badge/LLM-Ollama%20%7C%20OpenAI%20%7C%20OpenRouter%20%7C%20Claude-2B6CB0?style=flat-square)
 ![deploy](https://img.shields.io/badge/deploy-on--prem-1F9254?style=flat-square)
-![tests](https://img.shields.io/badge/tests-28%20passing-1F9254?style=flat-square)
+![tests](https://img.shields.io/badge/tests-19%20passing-1F9254?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-6B7689?style=flat-square)
 
 </div>
+
+---
+
+## See it work
+
+<div align="center">
+
+![PraroopAI demo](docs/media/demo.gif)
+
+*Describe a project → agents draft it → the compliance critic finds the gaps →
+the reviewer fixes them → the export gate unlocks at 100%.*
+
+</div>
+
+> 🎬 Higher-quality MP4: [`docs/media/demo.mp4`](docs/media/demo.mp4)
 
 ---
 
@@ -31,68 +46,42 @@ then hands it to a **deterministic compliance critic** that audits it against pu
 government rule-packs. Compliance is a **hard gate** — the document *cannot* be exported
 while a mandatory check is failing.
 
-![PraroopAI](docs/media/screenshot.png)
-
----
-
-## The design principle
-
-> **The LLM writes prose. Code owns the facts.**
-
-Small models are unreliable with numbers and formulaic clauses, so those are never left
-to the model:
-
-| Concern | Owner | Guarantee |
-|---|---|---|
-| Section prose | LLM | readable, project-specific text |
-| Every money figure | `core/derivations.py` | amounts are computed, and `core/sanitize.py` rewrites any model-written amount to the canonical figure |
-| Compliance verdict | `core/rule_engine.py` | pure code — a "100%" verdict is a fact, not an opinion |
-| Formulaic clauses | `agents/fallbacks.py` | if the model cannot satisfy a deterministic rule, the clause is **built from statutory config** so the gate can always close honestly |
-
-The trace attributes every repair:
-
-```
-Fixed: risk_analysis, outcomes (AI); sla, penalty, data_security (rule-built)
-```
-
----
-
-## Features
-
 | | |
 |---|---|
 | 🤖 **Multi-agent pipeline** | intake → derive → draft → compliance → reviewer, with a real feedback loop |
-| 📡 **Live progress** | progress bar, per-section streaming and a Live Log tab — never a silent wait |
-| 🔍 **Real logging** | `LOG_LEVEL=TRACE\|DEBUG\|INFO\|WARNING` shows every LLM call with timing |
-| 🧮 **Code owns the maths** | EMD, PBG, penalty caps and milestone amounts computed in Python |
+| 📡 **Live streaming** | the trace lights up node-by-node over SSE as each agent fires |
+| 🧠 **LLM writes the prose** | every section is generated; no hardcoded document text |
+| 🧮 **Code does the maths** | EMD, PBG, penalty caps and milestone amounts are computed in Python — the model only copies them |
 | 🛡️ **Deterministic compliance** | rules run in code, so compliance can never hallucinate |
-| 🧰 **Deterministic repair** | formulaic clauses are rule-built when the model fails |
 | 📖 **Citation-grade** | every finding cites its basis (GFR 2017, IT Act, MeitY model RFP) |
 | 🔒 **Hard gate** | export returns **HTTP 423** while any mandatory finding is open |
-| 🔌 **Any LLM provider** | switch by editing one line of `.env` |
+| 🔌 **Any LLM provider** | Ollama, OpenAI, OpenRouter, Claude — switch by editing one line of `.env` |
+| 🏛️ **On-prem ready** | point it at local Ollama and no data leaves government |
 
 ---
 
 ## Quickstart
 
 ```bash
+git clone <your-repo-url> praroopai && cd praroopai
+
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r backend/requirements.txt
 
 cp .env.example .env               # Windows: copy .env.example .env
-ollama pull qwen2.5:7b
+# edit .env → set LLM_PROVIDER and LLM_MODEL
 
-./run.sh                           # Windows: run.bat
+ollama pull qwen2.5:7b             # if using Ollama
+
+uvicorn backend.app:app --reload --port 8000
 ```
 
 Open **<http://localhost:8000>** — the backend serves the UI, so there is
 **nothing separate to start**.
 
-> 💡 `qwen2.5:1.5b` runs but writes thin prose. Use **`qwen2.5:7b` or `14b`** for
-> documents that read like real government drafts.
-
-See **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** if anything looks stuck.
+> 💡 **Model size matters.** `qwen2.5:1.5b` runs but writes thin prose.
+> Use **`qwen2.5:7b` or `14b`** for documents that read like real government drafts.
 
 ---
 
@@ -103,6 +92,7 @@ Change **one line** in `.env`. No code edits, no redeploy.
 ```ini
 LLM_PROVIDER=ollama          # ollama | openai | openrouter | anthropic | openai_compatible
 LLM_MODEL=qwen2.5:7b
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 | `LLM_PROVIDER` | Example `LLM_MODEL` | Needs |
@@ -111,9 +101,9 @@ LLM_MODEL=qwen2.5:7b
 | `openai` | `gpt-4o-mini` | `OPENAI_API_KEY` |
 | `openrouter` | `anthropic/claude-3.5-sonnet` | `OPENROUTER_API_KEY` |
 | `anthropic` | `claude-3-5-sonnet-20241022` | `ANTHROPIC_API_KEY` |
-| `openai_compatible` | any | vLLM / LM Studio / Together / Groq |
+| `openai_compatible` | any | vLLM / LM Studio / Together / Groq base URL |
 
-Providers use each vendor's **native REST API** via `httpx` — no vendor SDKs.
+Providers use each vendor's **native REST API** via `httpx` — no vendor SDKs required.
 
 ---
 
@@ -123,19 +113,26 @@ Providers use each vendor's **native REST API** via `httpx` — no vendor SDKs.
              ┌──────────── mandatory findings ────────────┐
              ▼                                            │
 intake ──► derive ──► draft ──► compliance ──► reviewer ───┘
- (LLM)      (code)     (LLM)      (code)      (LLM + code)
+ (LLM)      (code)     (LLM)      (code)         (LLM)
                                      │
                                      └── clean ──► score ──► END
 ```
 
-The only cycle is **compliance ⇄ reviewer**. The reviewer asks the LLM first; anything
-still failing a deterministic rule is then built in code.
+* **intake** — turns a plain-language request into a structured brief
+* **derive** — computes EMD / PBG / LD cap / milestone amounts *deterministically*
+* **draft** — writes each section with the LLM, **one focused call per section**
+* **compliance** — the *independent critic*: runs every rule-pack in code
+* **reviewer** — rewrites only the failing sections, then loops back for a re-check
+* **score** — builds the scorecard and opens or closes the export gate
+
+The only cycle is **compliance ⇄ reviewer**. Because compliance is pure code, a
+"100% compliant" verdict is a fact, not a model opinion.
 
 ---
 
 ## The knowledge = bounded rule-packs
 
-Small, public, versioned **YAML** — *not* a document corpus. 6 packs, 24 rules.
+Intelligence comes from small, public, versioned **YAML** — *not* a document corpus.
 
 | Pack | Covers | Example citation |
 |---|---|---|
@@ -146,7 +143,32 @@ Small, public, versioned **YAML** — *not* a document corpus. 6 packs, 24 rules
 | `penalty.yaml` | Liquidated damages, per-milestone penalty | GFR 2017, Rule 175 |
 | `dpr_completeness.yaml` | DPR-only sections (need analysis, risk, outcomes) | MoSPI DPR guidelines |
 
-Statutory ratios live in [`config/statutory.yaml`](config/statutory.yaml).
+```yaml
+- id: PEN-004
+  title: "Penalty clause is substantive"
+  citation: "GFR 2017, Rule 175 (enforceability)"
+  applies_to: [RFP, DPR]
+  check: "penalty_text_ok == True"
+  severity: mandatory          # mandatory = hard gate
+  message: "The penalty clause must state a rate, a cap, and cover each milestone."
+```
+
+Statutory ratios (EMD 2%, PBG 5%, LD cap 10%…) live in
+[`config/statutory.yaml`](config/statutory.yaml) — edit them without touching code.
+
+---
+
+## RFP and DPR are different documents
+
+| RFP (7 sections) | DPR (11 sections) |
+|---|---|
+| Scope of Work | Executive Summary |
+| Eligibility & Qualification | Background & Need Analysis |
+| Bid Evaluation Methodology | Objectives & Scope |
+| Payment Schedule | Technical Design & Architecture |
+| Service Levels (SLA) | Implementation Plan & Timeline |
+| Data Security | Cost Estimate & Financial Phasing |
+| Penalty & Liquidated Damages | O&M Service Levels · Data Security · Penalty · **Risk Analysis** · **Expected Outcomes** |
 
 ---
 
@@ -154,12 +176,12 @@ Statutory ratios live in [`config/statutory.yaml`](config/statutory.yaml).
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/health` | engine, provider, model, tuning, LLM call stats |
+| `GET` | `/api/health` | engine, provider, model, reachability |
 | `GET` | `/api/rulepacks` | active packs and versions |
 | `GET` | `/api/structure/{doc_type}` | section outline for RFP or DPR |
 | `POST` | `/api/run` | run the pipeline (single JSON response) |
-| `POST` | `/api/run/stream` | **SSE** — `step` / `node` / `progress` / `ping` / `complete` |
-| `POST` | `/api/export` | DOCX — **HTTP 423** if a mandatory finding is open |
+| `POST` | `/api/run/stream` | **SSE** — live `step` / `node` / `complete` events |
+| `POST` | `/api/export` | DOCX download — **HTTP 423** if a mandatory finding is open |
 
 ---
 
@@ -167,27 +189,25 @@ Statutory ratios live in [`config/statutory.yaml`](config/statutory.yaml).
 
 ```
 praroopai/
-├── .env.example              ← provider, log level, pipeline tuning
-├── config/statutory.yaml     ← statutory ratios (EMD/PBG/LD)
+├── .env.example              ← the only place you switch LLM providers
+├── config/statutory.yaml     ← statutory ratios (EMD/PBG/LD) — not hardcoded
 ├── backend/
 │   ├── app.py                ← FastAPI: serves the UI + API
-│   ├── logging_setup.py      ← TRACE/DEBUG/INFO logging
-│   ├── llm/                  ← provider-agnostic client (+ call timing)
-│   └── core/
-│       ├── derivations.py    ← money computed here, plus canonical_amounts()
-│       ├── sanitize.py       ← markdown strip + money correction
-│       ├── rule_engine.py    ← YAML rules, safe evaluator
-│       ├── context.py        ← the variables rules read
-│       └── scorecard.py      ← RAG status + hard gate
+│   ├── config.py             ← .env → typed Settings
+│   ├── llm/                  ← provider-agnostic client
+│   │   ├── providers.py      ← ollama · openai · openrouter · anthropic · compatible
+│   │   └── client.py         ← chat / chat_json / health
+│   ├── core/                 ← derivations · rule_engine · context · scorecard
+│   └── services/             ← gated DOCX export
 ├── agents/
-│   ├── graph.py              ← LangGraph StateGraph + threaded streaming
+│   ├── graph.py              ← LangGraph StateGraph (+ identical fallback runner)
 │   ├── nodes.py              ← the six node functions
-│   ├── fallbacks.py          ← deterministic clause builders
-│   ├── progress.py           ← live progress bus
-│   └── doc_structure.py      ← RFP (7) vs DPR (11) section sets
-├── rule_packs/*.yaml
-├── frontend/                 ← no-build UI + icons
-└── tests/                    ← 28 tests + a mock LLM server
+│   ├── doc_structure.py      ← RFP vs DPR section sets
+│   └── prompts.py            ← all LLM prompts
+├── rule_packs/*.yaml         ← the bounded knowledge (6 packs, 24 rules)
+├── frontend/                 ← no-build UI (HTML + CSS + JS) and icons
+├── tests/                    ← 19 tests + a mock LLM server
+└── docs/media/               ← demo GIF, MP4, screenshot
 ```
 
 ---
@@ -195,20 +215,33 @@ praroopai/
 ## Tests
 
 ```bash
-python tests/test_pipeline.py    # 18 — maths, sanitisers, fallbacks, hard gate
-python tests/test_providers.py   #  5 — all provider adapters
-python tests/test_logging.py     #  5 — log levels and the progress bus
-MOCK_STUBBORN=1 python tests/run_e2e.py
+python tests/test_pipeline.py    # 14 — engine, maths, hard gate, DPR completeness
+python tests/test_providers.py   #  5 — all provider adapters route correctly
+python tests/run_e2e.py          # full pipeline for both RFP and DPR (mock LLM)
 ```
 
-The E2E run uses a **deliberately stubborn mock model** that writes markdown, gets
-amounts wrong by 100×, and refuses to fix its penalty clause — and asserts the document
-still reaches 100% with no markdown or bad amounts leaking through.
+No API key or model needed — `tests/mock_llm_server.py` emulates Ollama locally.
+
+---
+
+## Screenshot
+
+![PraroopAI interface](docs/media/screenshot.png)
+
+---
+
+## Why it fits UKIS 2026
+
+Grounded, not open-ended. Numbers are derived, not guessed. Compliance is a **hard gate**
+backed by citations. It runs entirely **on-premise**, so government data never leaves the
+State Data Centre. And the **Compliance Scorecard** makes the value obvious in ten seconds.
 
 ---
 
 <div align="center">
 
-**PraroopAI (प्रारूप)** — *Built for Uttarakhand.* · MIT Licensed
+**PraroopAI (प्रारूप)** — *Built for Uttarakhand.*
+
+MIT Licensed
 
 </div>
