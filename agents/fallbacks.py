@@ -2,7 +2,7 @@
 Deterministic clause builders.
 
 Some sections are not creative writing — they are formulae. The penalty clause,
-the SLA table and the payment schedule are fully determined by the statutory
+the SLA schedule and the payment schedule are fully determined by the statutory
 config plus the officer's numbers.
 
 A small model frequently fails to write them in a compliant form, which used to
@@ -11,13 +11,35 @@ the compliance critic is deterministic, the *repair* for a deterministic rule
 should be deterministic too: if the reviewer LLM cannot satisfy the rule, we
 synthesise the clause in code from the same figures the critic checks against.
 
-This guarantees the hard gate can always be closed honestly — the text is
-generated from the authoritative numbers, not guessed.
+`FINDING_SECTIONS` additionally tells the reviewer which section each finding is
+allowed to touch, so the model can never overwrite a section that already passed.
 """
 from __future__ import annotations
 from typing import Any
 
 from backend.core.derivations import inr
+
+
+# ── which section does each finding belong to? ──────────────────────
+# Used by the reviewer as a whitelist. Covers EVERY rule, including those we
+# cannot auto-build, so an unrelated key from the model is always rejected.
+FINDING_SECTIONS: dict[str, str] = {
+    # penalty
+    "PEN-001": "penalty", "PEN-002": "penalty",
+    "PEN-003": "penalty", "PEN-004": "penalty",
+    # service levels
+    "SLA-001": "sla", "SLA-002": "sla", "SLA-003": "sla", "DPR-007": "sla",
+    # security
+    "SEC-001": "data_security", "SEC-002": "data_security",
+    # financial
+    "FIN-003": "payment",
+    # procurement
+    "GFR-001": "scope", "GFR-002": "eligibility", "GFR-004": "evaluation",
+    # DPR-only sections
+    "DPR-001": "executive_summary", "DPR-002": "background",
+    "DPR-003": "technical_design", "DPR-004": "implementation_plan",
+    "DPR-005": "risk_analysis", "DPR-006": "outcomes",
+}
 
 
 def penalty_clause(brief: dict[str, Any], derived: dict[str, Any]) -> str:
@@ -34,8 +56,8 @@ def penalty_clause(brief: dict[str, Any], derived: dict[str, Any]) -> str:
         "Milestone-wise delay penalty:",
     ]
     for m in derived.get("milestones", []):
-        amt = inr(m.get("payment_amount", 0))
-        lines.append(f"- {m.get('name')}: {weekly}% of {amt} per week of delay")
+        lines.append(f"- {m.get('name')}: {weekly}% of "
+                     f"{inr(m.get('payment_amount', 0))} per week of delay")
     lines += [
         "",
         f"The aggregate liquidated damages recoverable under this contract shall "
@@ -109,7 +131,7 @@ def payment_clause(brief: dict[str, Any], derived: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-# rule id -> (section key, builder)
+# rule id -> (section key, builder)  — only rules we can satisfy in code
 RULE_FALLBACKS: dict[str, tuple[str, Any]] = {
     "PEN-001": ("penalty", penalty_clause),
     "PEN-002": ("penalty", penalty_clause),

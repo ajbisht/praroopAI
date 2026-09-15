@@ -49,6 +49,7 @@ class Settings:
     compat_api_key: str = _g("OPENAI_COMPATIBLE_API_KEY")
     compat_base_url: str = _g("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:8001/v1")
     port: int = _i("PRAROOP_PORT", 8000)
+    draft_concurrency: int = _i("DRAFT_CONCURRENCY", 3)
 
 
 settings = Settings()

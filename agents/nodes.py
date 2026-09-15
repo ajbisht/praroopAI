@@ -3,23 +3,31 @@ Agent node functions.
   intake / draft / reviewer   -> LLM-driven
   derive / compliance / score -> deterministic
 
-Two safeguards keep small models honest:
-  * every section is passed through the money sanitiser, so amounts can only
-    be the canonical figures the derivation engine computed;
+Safeguards that keep small models honest:
+  * every section passes through the money sanitiser, so amounts can only be
+    the canonical figures the derivation engine computed;
+  * markdown headings and emphasis are stripped, so the model's "### 5. Title"
+    and "#### Overview:" never leak into the document;
+  * the reviewer may only rewrite sections that an OPEN finding actually maps
+    to, so it can never clobber a section that already passed;
   * if the reviewer LLM cannot clear a deterministic rule, the clause is
     synthesised in code (agents/fallbacks.py) so the hard gate can close.
+
+Drafting runs sections on a small worker pool (DRAFT_CONCURRENCY) because the
+sections are independent; this is the single biggest win on a slow model.
 """
 from __future__ import annotations
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from backend.config import settings
 from backend.llm import client as llm
 from backend.logging_setup import get_logger
 from backend.core.derivations import derive
-from backend.core.context import build_context
+from backend.core.context import build_context, penalty_text_ok
 from backend.core.rule_engine import evaluate
 from backend.core.scorecard import build_scorecard
 from backend.core.sanitize import (fix_amounts, normalize_currency,
@@ -90,7 +98,7 @@ def derive_node(state):
                             f"PBG {d['money']['pbg_amount']} · {d['tender_mode']}")]}
 
 
-# ── 3. DRAFT (one LLM call per section) ─────────────────────────────
+# ── 3. DRAFT (one LLM call per section, run on a worker pool) ───────
 def _draft_one(doc_type, title, guide, brief, derived):
     money = derived.get("money", {})
     user = prompts.SECTION_USER.format(
@@ -129,27 +137,44 @@ def draft_node(state):
     doc_type = (brief.get("doc_type") or "RFP").upper()
     spec = doc_structure.sections_for(doc_type)
     total = len(spec)
-    log.info("[draft] start - %d %s sections, up to %d LLM calls",
-             total, doc_type, total * settings.section_retries)
-    progress.emit(type="progress", stage="draft",
-                  detail=f"Drafting {total} {doc_type} sections…")
+    workers = max(1, min(settings.draft_concurrency, total))
 
-    sections, t_all = {}, time.monotonic()
-    for i, (key, title, guide) in enumerate(spec, 1):
-        progress.emit(type="progress", stage="draft", current=i, total=total,
-                      detail=f"Drafting {i}/{total} — {title}")
+    log.info("[draft] start - %d %s sections, %d at a time (up to %d LLM calls)",
+             total, doc_type, workers, total * settings.section_retries)
+    progress.emit(type="progress", stage="draft",
+                  detail=f"Drafting {total} {doc_type} sections "
+                         f"({workers} in parallel)…")
+
+    # workers are separate threads, so re-bind the progress queue inside each
+    q = progress.current()
+    done = 0
+    t_all = time.monotonic()
+
+    def work(item):
+        i, (key, title, guide) = item
+        progress.bind(q)
         t0 = time.monotonic()
         body = _draft_one(doc_type, title, guide, brief, derived)
-        dt = time.monotonic() - t0
-        if body.strip():
-            sections[key] = {"title": title, "body": body.strip()}
-            log.info("[draft] %d/%d %-46s %5.1fs  %d chars", i, total, title, dt, len(body))
-            progress.emit(type="progress", stage="draft", current=i, total=total,
-                          detail=f"✓ {i}/{total} — {title} ({dt:.0f}s)")
-        else:
-            log.warning("[draft] %d/%d %-46s %5.1fs  EMPTY", i, total, title, dt)
-            progress.emit(type="progress", stage="draft", current=i, total=total,
-                          detail=f"⚠ {i}/{total} — {title} came back empty")
+        return i, key, title, body, time.monotonic() - t0
+
+    results: dict[str, dict[str, str]] = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, key, title, body, dt in pool.map(work, enumerate(spec, 1)):
+            done += 1
+            if body.strip():
+                results[key] = {"title": title, "body": body.strip()}
+                log.info("[draft] %d/%d %-46s %5.1fs  %d chars",
+                         done, total, title, dt, len(body))
+                progress.emit(type="progress", stage="draft", current=done,
+                              total=total, detail=f"✓ {done}/{total} — {title} ({dt:.0f}s)")
+            else:
+                log.warning("[draft] %d/%d %-46s %5.1fs  EMPTY", done, total, title, dt)
+                progress.emit(type="progress", stage="draft", current=done,
+                              total=total,
+                              detail=f"⚠ {done}/{total} — {title} came back empty")
+
+    # keep canonical document order regardless of completion order
+    sections = {k: results[k] for k, _, _ in spec if k in results}
 
     _sync_penalties(derived, sections.get("penalty", {}).get("body", ""))
     log.info("[draft] done - %d/%d sections in %.1fs",
@@ -185,9 +210,17 @@ def reviewer_node(state):
     doc_type = (brief.get("doc_type") or "RFP").upper()
     titles = doc_structure.titles_for(doc_type)
     open_mandatory = [f for f in state["findings"] if f["severity"] == "mandatory"]
+    open_ids = [f["rule_id"] for f in open_mandatory]
     loop = state.get("loop_count", 0) + 1
-    log.info("[reviewer] fixing %d mandatory findings (loop %d)",
-             len(open_mandatory), loop)
+
+    # ONLY sections tied to an open finding may be rewritten. Without this the
+    # model can return an unrelated key and destroy a section that had passed.
+    allowed = {fallbacks.FINDING_SECTIONS[r] for r in open_ids
+               if r in fallbacks.FINDING_SECTIONS}
+
+    log.info("[reviewer] fixing %d mandatory findings (loop %d); "
+             "may rewrite: %s", len(open_mandatory), loop,
+             ", ".join(sorted(allowed)) or "nothing")
     progress.emit(type="progress", stage="reviewer",
                   detail=f"Fixing {len(open_mandatory)} compliance issue(s)…")
 
@@ -209,6 +242,10 @@ def reviewer_node(state):
     if isinstance(fix_map, dict):
         for key, val in fix_map.items():
             if key not in titles:
+                continue
+            if key not in allowed:
+                log.warning("[reviewer] rejected '%s' - not tied to any open "
+                            "finding (would have overwritten a passing section)", key)
                 continue
             body = _polish(val, derived)
             if body.strip():
@@ -310,7 +347,11 @@ def _human(k: str) -> str:
     return str(k).replace("_", " ").strip().capitalize()
 
 
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+.*$", re.MULTILINE)
+
+
 def _clean(text: str) -> str:
+    """Strip code fences, JSON wrappers and EVERY markdown heading line."""
     if not text:
         return ""
     t = text.strip()
@@ -321,11 +362,14 @@ def _clean(text: str) -> str:
             t = _coerce(json.loads(t))
         except Exception:
             pass
-    return re.sub(r"^\s*#{1,6}\s*.*\n", "", t, count=1).strip()
+    # models echo "### 5. Title" and then use "#### Overview:" as sub-headings.
+    # Remove them all - the document supplies its own heading for the section.
+    t = _HEADING.sub("", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
 
 
 def _sync_penalties(derived, penalty_text: str) -> None:
-    from backend.core.context import penalty_text_ok
     ok = penalty_text_ok(penalty_text)
     for m in derived.get("milestones", []):
         m["has_penalty"] = ok
