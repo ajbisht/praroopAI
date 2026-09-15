@@ -1,0 +1,41 @@
+pack: procurement_gfr
+label: "Procurement / GFR"
+version: 2026.2
+authority: "GFR 2017 (Rules 151, 161, 173) + CVC guidelines"
+rules:
+  - id: GFR-001
+    title: "Scope of work present"
+    citation: "GFR 2017, Rule 173(i)"
+    applies_to: [RFP, DPR]
+    check: "has_section_scope == True"
+    severity: mandatory
+    message: "A clear Scope of Work section is mandatory."
+    clause: "Per GFR 2017 Rule 173, the document must contain precise specifications and scope."
+    fix_hint: "Add a Scope of Work section."
+  - id: GFR-002
+    title: "Eligibility criteria present"
+    citation: "GFR 2017, Rule 151"
+    applies_to: [RFP]
+    check: "has_section_eligibility == True"
+    severity: mandatory
+    message: "Bidder eligibility criteria must be defined."
+    clause: "Per GFR 2017 Rule 151, eligibility and qualification criteria must be stated."
+    fix_hint: "Add an Eligibility Criteria section."
+  - id: GFR-003
+    title: "Tender mode by cost slab"
+    citation: "GFR 2017, Rule 161"
+    applies_to: [RFP]
+    check: "tender_mode_ok == True"
+    severity: mandatory
+    message: "Tender mode must match the cost slab (open tender above Rs 50 lakh)."
+    clause: "Per GFR 2017 Rule 161, procurements above threshold require Advertised (Open) Tender Enquiry."
+    fix_hint: "Use Open Tender above Rs 50 lakh."
+  - id: GFR-004
+    title: "Evaluation criteria present"
+    citation: "GFR 2017, Rule 173(iii) + CVC"
+    applies_to: [RFP]
+    check: "has_section_evaluation == True"
+    severity: recommended
+    message: "Define how bids will be evaluated (QCBS/L1)."
+    clause: "The document must disclose evaluation and award criteria in advance."
+    fix_hint: "Add a Bid Evaluation section."

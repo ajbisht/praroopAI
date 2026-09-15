@@ -1,0 +1,10 @@
+# Statutory ratios & thresholds (public, from GFR / State Procurement Manual).
+# These are FACTS, not prose — kept in config so the LLM never invents them.
+emd_percent: 2.0
+pbg_percent: 5.0
+ld_cap_percent: 10.0
+ld_weekly_percent: 0.5
+open_tender_threshold: 5000000
+default_uptime_percent: 99.5
+default_grace_days: 7
+default_milestone_split: [40, 30, 30]

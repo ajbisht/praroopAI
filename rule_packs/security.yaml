@@ -1,0 +1,23 @@
+pack: security
+label: "Security & Data"
+version: 2026.2
+authority: "IT Act 2000 (Sec 43A) + MeitY guidelines"
+rules:
+  - id: SEC-001
+    title: "Data security & retention clause"
+    citation: "IT Act 2000, Sec 43A + MeitY guidelines"
+    applies_to: [RFP, DPR]
+    check: "has_section_data_security == True"
+    severity: mandatory
+    message: "A data security & retention clause is mandatory for IT projects."
+    clause: "Per IT Act 2000 Sec 43A, reasonable security practices and a retention policy are required."
+    fix_hint: "Add a Data Security section."
+  - id: SEC-002
+    title: "Data residency"
+    citation: "MeitY cloud empanelment policy"
+    applies_to: [RFP]
+    check: "data_residency_ok == True"
+    severity: recommended
+    message: "State whether data is on-premise or in a govt-approved cloud."
+    clause: "Government data should reside on-premise or on a MeitY-empanelled cloud within India."
+    fix_hint: "Declare on-premise or empanelled cloud storage."
