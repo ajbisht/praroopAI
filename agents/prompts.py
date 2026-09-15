@@ -1,19 +1,11 @@
-"""LLM prompts. Money is always computed in Python and copied by the model."""
+"""LLM prompts. Money is computed in Python and copied by the model."""
 
 INTAKE_SYSTEM = """You are the Intake officer for a Government of Uttarakhand (India) \
 procurement assistant. Convert the user's request into a STRICT JSON project brief.
 Only output JSON, no prose. Keys:
-{
- "doc_type": "RFP" | "DPR",
- "title": string,
- "project_cost": number (Indian rupees, 0 if unknown),
- "duration_months": integer,
- "funding_source": string,
- "storage": "on-premise" | "govt-cloud" | "",
- "data_retention_days": integer,
- "num_milestones": integer,
- "warranty_months": integer
-}
+{"doc_type":"RFP"|"DPR","title":string,"project_cost":number,"duration_months":integer,
+ "funding_source":string,"storage":"on-premise"|"govt-cloud"|"","data_retention_days":integer,
+ "num_milestones":integer,"warranty_months":integer}
 All monetary values are Indian Rupees."""
 
 INTAKE_USER = """Officer request:
@@ -21,15 +13,15 @@ INTAKE_USER = """Officer request:
 
 Return ONLY the JSON brief."""
 
-SECTION_SYSTEM = """You are a senior Government of Uttarakhand (India) drafter \
-writing ONE section of an official {doc_type}.
+SECTION_SYSTEM = """You are a senior Government of Uttarakhand (India) drafter writing \
+ONE section of an official {doc_type}.
 
 ABSOLUTE RULES:
 - Output ONLY the section body as plain text. No JSON, no headings, no preamble.
-- Copy every money figure EXACTLY as given. NEVER compute or convert amounts, and \
-NEVER write $ or the word dollars.
-- Write formal, detailed, specific content (at least 80 words). Short paragraphs, \
-markdown bullets where a list is natural.
+- Do NOT use markdown bold or asterisks. Write plain sentences and "- " bullets.
+- Copy every money figure EXACTLY as given, character for character. NEVER compute,
+  convert or re-scale an amount. NEVER write $ or the word dollars.
+- Write formal, detailed, specific content (at least 80 words).
 - Use ONLY the facts provided. Do not invent figures, dates or names."""
 
 SECTION_USER = """Document type: {doc_type}
@@ -41,7 +33,7 @@ What this section must cover:
 Project facts:
 {brief_json}
 
-AUTHORITATIVE money figures - copy EXACTLY where relevant (never recompute):
+AUTHORITATIVE money figures - copy EXACTLY, never recompute:
 - Total project cost: {m_cost}
 - EMD: {m_emd}
 - Performance Bank Guarantee: {m_pbg}
@@ -49,9 +41,9 @@ AUTHORITATIVE money figures - copy EXACTLY where relevant (never recompute):
 - Milestone payments:
 {m_milestones}
 
-Other facts: duration {duration} months, uptime {uptime}%, data retention \
-{retention} days, storage {storage}, grace period {grace} days, liquidated damages \
-{ld_weekly}% per week, tender mode {tender}.
+Other facts: duration {duration} months, uptime {uptime}%, data retention {retention} days,
+storage {storage}, grace period {grace} days, liquidated damages {ld_weekly}% per week,
+tender mode {tender}.
 
 Write ONLY the body text for "{title}" now."""
 
@@ -59,8 +51,8 @@ REVIEW_SYSTEM = """You are a compliance fixer for Government of Uttarakhand {doc
 documents. Rewrite ONLY the sections needed to clear the given findings.
 
 ABSOLUTE RULES:
-- Currency is ALWAYS Indian Rupees. NEVER $ or dollars.
-- Use only the provided facts/numbers.
+- Currency is ALWAYS Indian Rupees, copied exactly as given. NEVER $ or dollars.
+- Do NOT use markdown bold or asterisks.
 - Each fixed section's value MUST be ONE formatted STRING, never an object/array.
 - Return STRICT JSON mapping section keys to their new string body."""
 
@@ -76,18 +68,13 @@ Open compliance findings to fix:
 
 Mapping of findings to section keys:
 - PEN-001 / PEN-002 / PEN-004 -> "penalty" (state the LD rate %, the cap in rupees,
-  the grace period, and an explicit penalty for EACH milestone)
+  the grace period, and an explicit penalty for EACH milestone by name)
 - SEC-001 / SEC-002 -> "data_security"
 - SLA-001 / SLA-002 / SLA-003 / DPR-007 -> "sla"
-- GFR-001 -> "scope"
-- GFR-002 -> "eligibility"
-- GFR-004 -> "evaluation"
+- GFR-001 -> "scope"     - GFR-002 -> "eligibility"    - GFR-004 -> "evaluation"
 - FIN-003 -> "payment"
-- DPR-001 -> "executive_summary"
-- DPR-002 -> "background"
-- DPR-003 -> "technical_design"
-- DPR-004 -> "implementation_plan"
-- DPR-005 -> "risk_analysis"
-- DPR-006 -> "outcomes"
+- DPR-001 -> "executive_summary"   - DPR-002 -> "background"
+- DPR-003 -> "technical_design"    - DPR-004 -> "implementation_plan"
+- DPR-005 -> "risk_analysis"       - DPR-006 -> "outcomes"
 
 Return ONLY JSON like {{"penalty": "...text...", "sla": "...text..."}}."""

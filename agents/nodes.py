@@ -1,11 +1,13 @@
 """
 Agent node functions.
   intake / draft / reviewer   -> LLM-driven
-  derive / compliance / score -> deterministic (statutory numbers + rules)
+  derive / compliance / score -> deterministic
 
-The drafting node makes one LLM call per section, which can take minutes on a
-small local model. It therefore emits a progress event after every section so
-the UI never looks frozen.
+Two safeguards keep small models honest:
+  * every section is passed through the money sanitiser, so amounts can only
+    be the canonical figures the derivation engine computed;
+  * if the reviewer LLM cannot clear a deterministic rule, the clause is
+    synthesised in code (agents/fallbacks.py) so the hard gate can close.
 """
 from __future__ import annotations
 import json
@@ -20,7 +22,9 @@ from backend.core.derivations import derive
 from backend.core.context import build_context
 from backend.core.rule_engine import evaluate
 from backend.core.scorecard import build_scorecard
-from . import prompts, doc_structure, progress
+from backend.core.sanitize import (fix_amounts, normalize_currency,
+                                   strip_markdown_emphasis)
+from . import prompts, doc_structure, progress, fallbacks
 
 log = get_logger("agents")
 
@@ -28,6 +32,15 @@ log = get_logger("agents")
 def _step(agent, kind, detail, **extra):
     return {"agent": agent, "kind": kind, "detail": detail,
             "ts": round(time.time() * 1000), **extra}
+
+
+def _polish(text: str, derived: dict[str, Any]) -> str:
+    """Every LLM-written body goes through this."""
+    t = _clean(_coerce(text))
+    t = strip_markdown_emphasis(t)
+    t = normalize_currency(t)
+    t = fix_amounts(t, derived)
+    return t.strip()
 
 
 # ── 1. INTAKE ───────────────────────────────────────────────────────
@@ -43,13 +56,9 @@ def intake_node(state):
             brief = llm.chat_json(prompts.INTAKE_USER.format(request=request),
                                   system=prompts.INTAKE_SYSTEM, label="intake")
         except Exception as e:
-            log.warning("[intake] LLM failed (%s) - falling back to form inputs", e)
-            brief = {}
+            log.warning("[intake] LLM failed (%s) - using form inputs", e)
     if not isinstance(brief, dict):
-        log.warning("[intake] model returned %s, not an object - ignoring",
-                    type(brief).__name__)
         brief = {}
-
     for k, v in raw.items():
         if v not in (None, "", 0) or k not in brief:
             brief[k] = v
@@ -61,10 +70,8 @@ def intake_node(state):
         base = 100 // n
         split = [base] * n
         split[-1] += 100 - sum(split)
-        brief["milestones"] = [
-            {"name": f"Milestone {i+1}", "payment_pct": split[i], "has_penalty": False}
-            for i in range(n)]
-
+        brief["milestones"] = [{"name": f"Milestone {i+1}", "payment_pct": split[i],
+                                "has_penalty": False} for i in range(n)]
     log.info("[intake] done -> %s '%s'", brief["doc_type"], brief["title"])
     return {"brief": brief,
             "trace": [_step("Intake Agent", "ai",
@@ -74,7 +81,7 @@ def intake_node(state):
 # ── 2. DERIVE ───────────────────────────────────────────────────────
 def derive_node(state):
     d = derive(state["brief"])
-    log.info("[derive] cost=%s emd=%s pbg=%s ld=%s tender=%s",
+    log.info("[derive] cost=%s emd=%s pbg=%s ld=%s %s",
              d["money"]["project_cost"], d["money"]["emd_amount"],
              d["money"]["pbg_amount"], d["money"]["ld_cap_amount"], d["tender_mode"])
     return {"derived": d,
@@ -104,19 +111,16 @@ def _draft_one(doc_type, title, guide, brief, derived):
     body = ""
     for attempt in range(max(1, settings.section_retries)):
         try:
-            out = llm.chat(
-                user if attempt == 0 else
-                user + "\n\nYour previous answer was too short. "
-                       "Write a fuller, more detailed section.",
-                system=system, label=f"draft:{title[:28]}")
+            out = llm.chat(user if attempt == 0 else
+                           user + "\n\nYour previous answer was too short. "
+                                  "Write a fuller, more detailed section.",
+                           system=system, label=f"draft:{title[:28]}")
         except Exception as e:
             log.error("[draft] '%s' attempt %d failed: %s", title, attempt + 1, e)
             out = ""
-        body = _clean(_coerce(out))
+        body = _polish(out, derived)
         if len(body) >= settings.min_section_chars:
             break
-        if out:
-            log.debug("[draft] '%s' too short (%d chars), retrying", title, len(body))
     return body
 
 
@@ -130,14 +134,12 @@ def draft_node(state):
     progress.emit(type="progress", stage="draft",
                   detail=f"Drafting {total} {doc_type} sections…")
 
-    sections = {}
-    t_all = time.monotonic()
+    sections, t_all = {}, time.monotonic()
     for i, (key, title, guide) in enumerate(spec, 1):
         progress.emit(type="progress", stage="draft", current=i, total=total,
                       detail=f"Drafting {i}/{total} — {title}")
         t0 = time.monotonic()
-        body = _repair_amounts(_normalize_currency(
-            _draft_one(doc_type, title, guide, brief, derived)))
+        body = _draft_one(doc_type, title, guide, brief, derived)
         dt = time.monotonic() - t0
         if body.strip():
             sections[key] = {"title": title, "body": body.strip()}
@@ -145,8 +147,7 @@ def draft_node(state):
             progress.emit(type="progress", stage="draft", current=i, total=total,
                           detail=f"✓ {i}/{total} — {title} ({dt:.0f}s)")
         else:
-            log.warning("[draft] %d/%d %-46s %5.1fs  EMPTY - compliance will flag it",
-                        i, total, title, dt)
+            log.warning("[draft] %d/%d %-46s %5.1fs  EMPTY", i, total, title, dt)
             progress.emit(type="progress", stage="draft", current=i, total=total,
                           detail=f"⚠ {i}/{total} — {title} came back empty")
 
@@ -162,9 +163,10 @@ def draft_node(state):
 def compliance_node(state):
     doc_type = state["brief"].get("doc_type", "RFP")
     progress.emit(type="progress", stage="compliance", detail="Auditing against rule-packs…")
-    project = {"brief": state["brief"], "derived": state["derived"],
-               "sections": state.get("sections", {})}
-    findings = evaluate(build_context(project), doc_type=doc_type)
+    findings = evaluate(build_context({"brief": state["brief"],
+                                       "derived": state["derived"],
+                                       "sections": state.get("sections", {})}),
+                        doc_type=doc_type)
     mand = sum(1 for f in findings if f["severity"] == "mandatory")
     if findings:
         log.info("[compliance] %d findings (%d mandatory): %s", len(findings), mand,
@@ -177,45 +179,70 @@ def compliance_node(state):
                             findings=findings)]}
 
 
-# ── 5. REVIEWER ─────────────────────────────────────────────────────
+# ── 5. REVIEWER (LLM first, deterministic fallback second) ──────────
 def reviewer_node(state):
     brief, derived = state["brief"], state["derived"]
     doc_type = (brief.get("doc_type") or "RFP").upper()
-    fixable = [f for f in state["findings"] if f["severity"] == "mandatory"]
+    titles = doc_structure.titles_for(doc_type)
+    open_mandatory = [f for f in state["findings"] if f["severity"] == "mandatory"]
+    loop = state.get("loop_count", 0) + 1
     log.info("[reviewer] fixing %d mandatory findings (loop %d)",
-             len(fixable), state.get("loop_count", 0) + 1)
+             len(open_mandatory), loop)
     progress.emit(type="progress", stage="reviewer",
-                  detail=f"Fixing {len(fixable)} compliance issue(s)…")
+                  detail=f"Fixing {len(open_mandatory)} compliance issue(s)…")
+
+    sections = dict(state.get("sections", {}))
+    fixed, via_code = [], []
+
+    # 1) ask the model
     try:
         fix_map = llm.chat_json(
             prompts.REVIEW_USER.format(
                 doc_type=doc_type,
                 brief_json=json.dumps(brief, ensure_ascii=False),
                 money_json=json.dumps(derived.get("money", {}), ensure_ascii=False),
-                findings_json=json.dumps(fixable, ensure_ascii=False)),
+                findings_json=json.dumps(open_mandatory, ensure_ascii=False)),
             system=prompts.REVIEW_SYSTEM.format(doc_type=doc_type), label="reviewer")
     except Exception as e:
         log.error("[reviewer] LLM failed: %s", e)
         fix_map = {}
-    if not isinstance(fix_map, dict):
-        fix_map = {}
-
-    titles = doc_structure.titles_for(doc_type)
-    sections = dict(state.get("sections", {}))
-    fixed = []
-    for key, val in fix_map.items():
-        if key not in titles:
-            log.debug("[reviewer] ignoring unknown section key '%s'", key)
-            continue
-        body = _repair_amounts(_normalize_currency(_clean(_coerce(val))))
-        if body.strip():
-            sections[key] = {"title": titles[key], "body": body.strip()}
-            fixed.append(key)
+    if isinstance(fix_map, dict):
+        for key, val in fix_map.items():
+            if key not in titles:
+                continue
+            body = _polish(val, derived)
+            if body.strip():
+                sections[key] = {"title": titles[key], "body": body.strip()}
+                fixed.append(key)
     _sync_penalties(derived, sections.get("penalty", {}).get("body", ""))
-    log.info("[reviewer] rewrote: %s", ", ".join(fixed) if fixed else "nothing")
-    return {"sections": sections, "loop_count": state.get("loop_count", 0) + 1,
-            "trace": [_step("Reviewer Agent", "ai",
-                            f"Fixed: {', '.join(fixed) if fixed else 'none'}")]}
+
+    # 2) re-check; anything still failing that we can build in code, we build
+    still = evaluate(build_context({"brief": brief, "derived": derived,
+                                    "sections": sections}), doc_type=doc_type)
+    still_mandatory = [f["rule_id"] for f in still if f["severity"] == "mandatory"]
+    if still_mandatory:
+        built = fallbacks.build_for(still_mandatory, brief, derived)
+        for key, body in built.items():
+            if key in titles:
+                sections[key] = {"title": titles[key], "body": body}
+                via_code.append(key)
+                if key in fixed:
+                    fixed.remove(key)
+        if via_code:
+            log.warning("[reviewer] model could not satisfy %s - built %s "
+                        "deterministically from statutory config",
+                        ", ".join(still_mandatory), ", ".join(via_code))
+        _sync_penalties(derived, sections.get("penalty", {}).get("body", ""))
+
+    parts = []
+    if fixed:
+        parts.append(f"{', '.join(fixed)} (AI)")
+    if via_code:
+        parts.append(f"{', '.join(via_code)} (rule-built)")
+    detail = "Fixed: " + ("; ".join(parts) if parts else "none")
+    log.info("[reviewer] %s", detail)
+    return {"sections": sections, "loop_count": loop,
+            "trace": [_step("Reviewer Agent", "ai" if fixed else "code", detail)]}
 
 
 def route_after_compliance(state) -> str:
@@ -224,8 +251,7 @@ def route_after_compliance(state) -> str:
     if mand > 0 and loops < settings.max_review_loops:
         return "reviewer"
     if mand > 0:
-        log.warning("[route] %d mandatory findings remain after %d loops - stopping",
-                    mand, loops)
+        log.warning("[route] %d mandatory findings remain after %d loops", mand, loops)
     return "end"
 
 
@@ -235,10 +261,9 @@ def score_node(state):
     sc = build_scorecard(state.get("findings", []), doc_type=doc_type)
     order = doc_structure.keys_for(doc_type)
     secs = state.get("sections", {})
-    ordered = {k: secs[k] for k in order if k in secs}
     log.info("[score] overall %d%% | mandatory_open=%d | can_finalize=%s",
              sc["overall_percent"], sc["mandatory_open"], sc["can_finalize"])
-    return {"sections": ordered, "scorecard": sc,
+    return {"sections": {k: secs[k] for k in order if k in secs}, "scorecard": sc,
             "trace": [_step("Coordinator", "done",
                             f"Overall {sc['overall_percent']}% · "
                             f"{'READY' if sc['can_finalize'] else 'BLOCKED'}")]}
@@ -254,22 +279,22 @@ def _coerce(value, depth=0) -> str:
         return str(value)
     ind = "  " * depth
     if isinstance(value, list):
-        lines = []
+        out = []
         for item in value:
             if isinstance(item, dict):
                 for k, v in item.items():
-                    lines.append(f"{ind}- {_human(k)}: {_inline(v)}")
+                    out.append(f"{ind}- {_human(k)}: {_inline(v)}")
             else:
-                lines.append(f"{ind}- {_inline(item)}")
-        return "\n".join(lines)
+                out.append(f"{ind}- {_inline(item)}")
+        return "\n".join(out)
     if isinstance(value, dict):
-        lines = []
+        out = []
         for k, v in value.items():
             if isinstance(v, (dict, list)):
-                lines.append(f"{ind}- {_human(k)}:\n{_coerce(v, depth+1)}")
+                out.append(f"{ind}- {_human(k)}:\n{_coerce(v, depth+1)}")
             else:
-                lines.append(f"{ind}- {_human(k)}: {v}")
-        return "\n".join(lines)
+                out.append(f"{ind}- {_human(k)}: {v}")
+        return "\n".join(out)
     return str(value)
 
 
@@ -296,55 +321,11 @@ def _clean(text: str) -> str:
             t = _coerce(json.loads(t))
         except Exception:
             pass
-    t = re.sub(r"^\s*#{1,6}\s*.*\n", "", t, count=1)
-    return t.strip()
-
-
-_AMT = re.compile(r"\u20b9\s?([\d,]+)\s*\(\s*\u20b9?\s*([\d.,]+)\s*(crore|lakh)\s*\)",
-                  re.IGNORECASE)
-
-
-def _repair_amounts(text: str) -> str:
-    """Recompute any '(Rs X crore/lakh)' label from the figure before it."""
-    if not text:
-        return text
-
-    def fix(m):
-        try:
-            val = float(m.group(1).replace(",", ""))
-        except ValueError:
-            return m.group(0)
-        if val >= 1_00_00_000:
-            return f"\u20b9{m.group(1)} (\u20b9{val/1_00_00_000:.2f} crore)"
-        if val >= 1_00_000:
-            return f"\u20b9{m.group(1)} (\u20b9{val/1_00_000:.2f} lakh)"
-        return f"\u20b9{m.group(1)}"
-
-    return _AMT.sub(fix, text)
-
-
-_DOLLAR = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)(?:\s+(million|mn|crore|lakh|billion|bn))?",
-                     re.IGNORECASE)
-
-
-def _normalize_currency(text: str) -> str:
-    if not text:
-        return text
-
-    def repl(m):
-        return f"\u20b9{m.group(1)} {m.group(2)}" if m.group(2) else f"\u20b9{m.group(1)}"
-
-    text = _DOLLAR.sub(repl, text)
-    text = re.sub(r"\bdollars?\b", "rupees", text, flags=re.IGNORECASE)
-    return text.replace("$", "\u20b9")
+    return re.sub(r"^\s*#{1,6}\s*.*\n", "", t, count=1).strip()
 
 
 def _sync_penalties(derived, penalty_text: str) -> None:
-    t = (penalty_text or "").lower()
-    each = any(w in t for w in ("each milestone", "every milestone",
-                                "per milestone", "each delivery"))
-    rate = ("%" in t) and any(w in t for w in ("per week", "per day", "weekly", "daily"))
-    cap = any(w in t for w in ("cap", "not exceed", "maximum"))
-    ok = bool(each and rate and cap and len(t) >= 80)
+    from backend.core.context import penalty_text_ok
+    ok = penalty_text_ok(penalty_text)
     for m in derived.get("milestones", []):
         m["has_penalty"] = ok

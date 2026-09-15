@@ -1,4 +1,4 @@
-"""Shared graph state. `trace` uses an additive reducer so nodes append steps."""
+"""Shared graph state."""
 from __future__ import annotations
 import operator
 from typing import Annotated, Any, TypedDict

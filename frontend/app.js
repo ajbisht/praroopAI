@@ -12,10 +12,7 @@ fetch("/api/health").then(r => r.json()).then(d => {
   lb.classList.add(llm.ok ? "ok" : "off");
   lb.querySelector("span").textContent = `${llm.provider || "llm"} · ${llm.model || "?"}`;
   lb.title = llm.detail || "";
-  if (!llm.ok) {
-    logLine(`LLM not ready: ${llm.detail}`, "warn");
-    showTab("log");
-  }
+  if (!llm.ok) { logLine(`LLM not ready: ${llm.detail}`, "warn"); showTab("log"); }
 }).catch(() => {});
 
 /* ── cost helper ────────────────────────────────────── */
@@ -70,7 +67,7 @@ const stepperAllDone = () => document.querySelectorAll(".step").forEach(s => {
   s.classList.remove("active"); s.classList.add("done");
 });
 
-/* ── progress bar + live log ────────────────────────── */
+/* ── progress + live log ────────────────────────────── */
 let t0 = 0, timer = null, logCount = 0;
 function startTimer() {
   t0 = Date.now();
@@ -79,8 +76,7 @@ function startTimer() {
     $("progressTime").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   }, 1000);
 }
-function stopTimer() { if (timer) clearInterval(timer); timer = null; }
-
+const stopTimer = () => { if (timer) clearInterval(timer); timer = null; };
 function setProgress(pct, text) {
   if (pct != null) $("progressFill").style.width = `${pct}%`;
   if (text) $("progressText").textContent = text;
@@ -93,8 +89,7 @@ function logLine(text, cls = "") {
   el.innerHTML = `<span class="t">${t}s</span><span>${esc(text)}</span>`;
   $("log").appendChild(el);
   $("log").scrollTop = $("log").scrollHeight;
-  logCount++;
-  setTabCount("log", logCount);
+  setTabCount("log", ++logCount);
 }
 
 /* ── lock inputs ────────────────────────────────────── */
@@ -122,8 +117,7 @@ function addTraceStep(s) {
   $("trace").appendChild(el);
   const live = $("trace").querySelectorAll(".trace-item.live");
   if (live.length > 1) live[live.length - 2].classList.remove("live");
-  traceCount++;
-  setTabCount("trace", traceCount);
+  setTabCount("trace", ++traceCount);
 }
 
 /* ── run ────────────────────────────────────────────── */
@@ -159,7 +153,6 @@ async function runPipeline() {
       body: JSON.stringify(payload)
     });
     if (!res.ok || !res.body) throw new Error(await res.text());
-
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = "", final = null;
@@ -189,24 +182,17 @@ async function runPipeline() {
     setProgress(100, "Failed");
     resetStepper();
   } finally {
-    stopTimer();
-    setLocked(false);
+    stopTimer(); setLocked(false);
   }
 }
 
-/* map stream events to UI */
 function handleEvent(evt) {
   switch (evt.type) {
     case "progress": {
       const d = evt.detail || "";
-      // light up the stage we are *currently inside*, not the last finished node
       if (evt.stage && STEP_ORDER.includes(evt.stage)) markStep(evt.stage);
-      if (evt.current && evt.total) {
-        // drafting occupies 25%..75% of the bar
-        setProgress(25 + Math.round(50 * evt.current / evt.total), d);
-      } else {
-        setProgress(null, d);
-      }
+      if (evt.current && evt.total) setProgress(25 + Math.round(50 * evt.current / evt.total), d);
+      else setProgress(null, d);
       logLine(d, d.startsWith("✓") ? "ok" : d.startsWith("⚠") ? "warn" : "work");
       break;
     }
@@ -221,12 +207,8 @@ function handleEvent(evt) {
         setProgress(base[evt.name] ?? null, null);
       }
       break;
-    case "ping":
-      setProgress(null, `Still working… (${evt.elapsed}s)`);
-      break;
-    case "error":
-      logLine(`ERROR: ${evt.message}`, "warn");
-      break;
+    case "ping": setProgress(null, `Still working… (${evt.elapsed}s)`); break;
+    case "error": logLine(`ERROR: ${evt.message}`, "warn"); break;
   }
 }
 
@@ -285,6 +267,7 @@ function render(data) {
     : `${sc.mandatory_open || 0} mandatory issue(s) block export.`;
 }
 
+/* body renderer: paragraphs, bullets, bold, highlighted amounts */
 function fmtBody(text) {
   const lines = String(text || "").split("\n");
   let html = "", inList = false;
@@ -293,17 +276,29 @@ function fmtBody(text) {
     if (!line) continue;
     if (/^[-*•]\s+/.test(line)) {
       if (!inList) { html += "<ul>"; inList = true; }
-      html += `<li>${hi(esc(line.replace(/^[-*•]\s+/, "")))}</li>`;
+      html += `<li>${rich(line.replace(/^[-*•]\s+/, ""))}</li>`;
     } else {
       if (inList) { html += "</ul>"; inList = false; }
-      html += `<p>${hi(esc(line))}</p>`;
+      html += `<p>${rich(line)}</p>`;
     }
   }
   if (inList) html += "</ul>";
   return html;
 }
-const hi = s => s.replace(/(₹[\d,]+(?:\s*\(₹[\d.]+\s*(?:crore|lakh)\))?)/g,
-  '<span class="amt">$1</span>');
+
+/* escape first, then apply inline formatting on the safe string */
+function rich(s) {
+  let out = esc(s);
+  // **bold** -> <strong> (safety net; bodies are normally stripped server-side)
+  out = out.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  // highlight a whole money token, including its "(₹2.00 crore)" suffix,
+  // so a composite amount is never split across two chips
+  out = out.replace(
+    /₹\s?[\d][\d,]*(?:\.\d+)?(?:\s*(?:crore|lakh))?(?:\s*\(₹\s?[\d][\d,]*(?:\.\d+)?\s*(?:crore|lakh)\))?/gi,
+    m => `<span class="amt">${m}</span>`);
+  return out;
+}
+
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 

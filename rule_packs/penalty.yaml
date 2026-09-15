@@ -3,39 +3,7 @@ label: "Penalty (Liquidated Damages)"
 version: 2026.2
 authority: "GFR 2017 (Rule 175) + Uttarakhand State Procurement Manual"
 rules:
-  - id: PEN-001
-    title: "Liquidated damages cap"
-    citation: "GFR 2017, Rule 175"
-    applies_to: [RFP, DPR]
-    check: "ld_percent <= 10"
-    severity: mandatory
-    message: "Liquidated damages must not exceed 10% of the contract value."
-    clause: "Per GFR 2017 Rule 175, LD ordinarily shall not exceed 10% of contract value."
-    fix_hint: "Cap liquidated damages at 10%."
-  - id: PEN-002
-    title: "Penalty tied to each milestone"
-    citation: "GFR 2017, Rule 175 + CVC delay-penalty guidelines"
-    applies_to: [RFP, DPR]
-    check: "every_milestone_has_penalty == True"
-    severity: mandatory
-    message: "Each delivery milestone must define a penalty for delay."
-    clause: "A delay penalty must be specified for EACH milestone to be enforceable."
-    fix_hint: "Add a delay penalty for every milestone."
-  - id: PEN-003
-    title: "Grace period defined"
-    citation: "State Procurement Manual, Cl. 8.4"
-    applies_to: [RFP, DPR]
-    check: "grace_period_days >= 0"
-    severity: recommended
-    message: "Define a grace period before penalties apply."
-    clause: "A reasonable grace period should be stated before damages accrue."
-    fix_hint: "Add a grace period (e.g. 7 days)."
-  - id: PEN-004
-    title: "Penalty clause is substantive"
-    citation: "GFR 2017, Rule 175 (enforceability)"
-    applies_to: [RFP, DPR]
-    check: "penalty_text_ok == True"
-    severity: mandatory
-    message: "The penalty clause must state a rate, an overall cap, and cover each milestone."
-    clause: "To be enforceable the LD clause must specify rate, cap, and apply per milestone."
-    fix_hint: "Rewrite with LD rate, cap in rupees, grace period, per-milestone penalty."
+  - {id: PEN-001, title: "Liquidated damages cap", citation: "GFR 2017, Rule 175", applies_to: [RFP, DPR], check: "ld_percent <= 10", severity: mandatory, message: "Liquidated damages must not exceed 10% of the contract value.", clause: "Per GFR 2017 Rule 175, LD ordinarily shall not exceed 10% of contract value.", fix_hint: "Cap liquidated damages at 10%."}
+  - {id: PEN-002, title: "Penalty tied to each milestone", citation: "GFR 2017, Rule 175 + CVC delay-penalty guidelines", applies_to: [RFP, DPR], check: "every_milestone_has_penalty == True", severity: mandatory, message: "Each delivery milestone must define a penalty for delay.", clause: "A delay penalty must be specified for EACH milestone to be enforceable.", fix_hint: "Add a delay penalty for every milestone."}
+  - {id: PEN-003, title: "Grace period defined", citation: "State Procurement Manual, Cl. 8.4", applies_to: [RFP, DPR], check: "grace_period_days >= 0", severity: recommended, message: "Define a grace period before penalties apply.", clause: "A reasonable grace period should be stated before damages accrue.", fix_hint: "Add a grace period (e.g. 7 days)."}
+  - {id: PEN-004, title: "Penalty clause is substantive", citation: "GFR 2017, Rule 175 (enforceability)", applies_to: [RFP, DPR], check: "penalty_text_ok == True", severity: mandatory, message: "The penalty clause must state a rate, an overall cap, and cover each milestone.", clause: "To be enforceable the LD clause must specify rate, cap, and apply per milestone.", fix_hint: "Rewrite with LD rate, cap in rupees, grace period, per-milestone penalty."}

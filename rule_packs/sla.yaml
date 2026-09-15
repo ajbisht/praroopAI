@@ -3,30 +3,6 @@ label: "Service Levels (SLA)"
 version: 2026.2
 authority: "MeitY Model RFP for e-Governance"
 rules:
-  - id: SLA-001
-    title: "Uptime commitment"
-    citation: "MeitY Model RFP, SLA Schedule"
-    applies_to: [RFP, DPR]
-    check: "uptime_percent >= 99.0"
-    severity: mandatory
-    message: "A minimum uptime commitment (>= 99%) must be defined."
-    clause: "A minimum system availability measured monthly must be committed."
-    fix_hint: "Set uptime SLA of at least 99.5%."
-  - id: SLA-002
-    title: "Response & resolution times"
-    citation: "MeitY Model RFP, Incident Management"
-    applies_to: [RFP]
-    check: "has_section_sla == True"
-    severity: mandatory
-    message: "Define incident response and resolution times."
-    clause: "Response and resolution timelines by severity must be specified."
-    fix_hint: "Add response/resolution SLAs."
-  - id: SLA-003
-    title: "Service credits"
-    citation: "MeitY Model RFP, SLA penalties"
-    applies_to: [RFP]
-    check: "has_section_sla == True"
-    severity: recommended
-    message: "Define service credits for SLA breaches."
-    clause: "Service credits for SLA breaches make the SLA enforceable."
-    fix_hint: "Add service-credit penalties."
+  - {id: SLA-001, title: "Uptime commitment", citation: "MeitY Model RFP, SLA Schedule", applies_to: [RFP, DPR], check: "uptime_percent >= 99.0", severity: mandatory, message: "A minimum uptime commitment (>= 99%) must be defined.", clause: "A minimum system availability measured monthly must be committed.", fix_hint: "Set uptime SLA of at least 99.5%."}
+  - {id: SLA-002, title: "Response & resolution times", citation: "MeitY Model RFP, Incident Management", applies_to: [RFP], check: "has_section_sla == True", severity: mandatory, message: "Define incident response and resolution times.", clause: "Response and resolution timelines by severity must be specified.", fix_hint: "Add response/resolution SLAs."}
+  - {id: SLA-003, title: "Service credits", citation: "MeitY Model RFP, SLA penalties", applies_to: [RFP], check: "has_section_sla == True", severity: recommended, message: "Define service credits for SLA breaches.", clause: "Service credits for SLA breaches make the SLA enforceable.", fix_hint: "Add service-credit penalties."}

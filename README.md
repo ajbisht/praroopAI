@@ -13,7 +13,7 @@
 ![engine](https://img.shields.io/badge/engine-LangGraph-6C4AB6?style=flat-square)
 ![llm](https://img.shields.io/badge/LLM-Ollama%20%7C%20OpenAI%20%7C%20OpenRouter%20%7C%20Claude-2B6CB0?style=flat-square)
 ![deploy](https://img.shields.io/badge/deploy-on--prem-1F9254?style=flat-square)
-![tests](https://img.shields.io/badge/tests-24%20passing-1F9254?style=flat-square)
+![tests](https://img.shields.io/badge/tests-28%20passing-1F9254?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-6B7689?style=flat-square)
 
 </div>
@@ -31,26 +31,45 @@ then hands it to a **deterministic compliance critic** that audits it against pu
 government rule-packs. Compliance is a **hard gate** — the document *cannot* be exported
 while a mandatory check is failing.
 
+![PraroopAI](docs/media/screenshot.png)
+
+---
+
+## The design principle
+
+> **The LLM writes prose. Code owns the facts.**
+
+Small models are unreliable with numbers and formulaic clauses, so those are never left
+to the model:
+
+| Concern | Owner | Guarantee |
+|---|---|---|
+| Section prose | LLM | readable, project-specific text |
+| Every money figure | `core/derivations.py` | amounts are computed, and `core/sanitize.py` rewrites any model-written amount to the canonical figure |
+| Compliance verdict | `core/rule_engine.py` | pure code — a "100%" verdict is a fact, not an opinion |
+| Formulaic clauses | `agents/fallbacks.py` | if the model cannot satisfy a deterministic rule, the clause is **built from statutory config** so the gate can always close honestly |
+
+The trace attributes every repair:
+
+```
+Fixed: risk_analysis, outcomes (AI); sla, penalty, data_security (rule-built)
+```
+
+---
+
+## Features
+
 | | |
 |---|---|
 | 🤖 **Multi-agent pipeline** | intake → derive → draft → compliance → reviewer, with a real feedback loop |
 | 📡 **Live progress** | progress bar, per-section streaming and a Live Log tab — never a silent wait |
 | 🔍 **Real logging** | `LOG_LEVEL=TRACE\|DEBUG\|INFO\|WARNING` shows every LLM call with timing |
-| 🧠 **LLM writes the prose** | every section is generated; no hardcoded document text |
-| 🧮 **Code does the maths** | EMD, PBG, penalty caps and milestone amounts are computed in Python |
+| 🧮 **Code owns the maths** | EMD, PBG, penalty caps and milestone amounts computed in Python |
 | 🛡️ **Deterministic compliance** | rules run in code, so compliance can never hallucinate |
+| 🧰 **Deterministic repair** | formulaic clauses are rule-built when the model fails |
 | 📖 **Citation-grade** | every finding cites its basis (GFR 2017, IT Act, MeitY model RFP) |
 | 🔒 **Hard gate** | export returns **HTTP 423** while any mandatory finding is open |
 | 🔌 **Any LLM provider** | switch by editing one line of `.env` |
-
----
-
-## Live progress
-
-A run makes **one LLM call per section** (7 for an RFP, 11 for a DPR), so on a small local
-model it takes 1–3 minutes. The UI streams every step so you always know what is happening:
-
-![Live progress](docs/media/progress.png)
 
 ---
 
@@ -67,27 +86,12 @@ ollama pull qwen2.5:7b
 ./run.sh                           # Windows: run.bat
 ```
 
-Open **<http://localhost:8080>** — the backend serves the UI, so there is
+Open **<http://localhost:8000>** — the backend serves the UI, so there is
 **nothing separate to start**.
 
-> 💡 **Model size matters.** `qwen2.5:1.5b` runs but writes thin prose.
-> Use **`qwen2.5:7b` or `14b`** for documents that read like real government drafts.
+> 💡 `qwen2.5:1.5b` runs but writes thin prose. Use **`qwen2.5:7b` or `14b`** for
+> documents that read like real government drafts.
 
-### Seeing what it is doing
-
-```ini
-# .env
-LOG_LEVEL=DEBUG
-```
-
-```
-10:29:19 INFO  praroopai.agents  [draft] start - 7 RFP sections, up to 14 LLM calls
-10:29:19 INFO  praroopai.llm     -> draft:1. Scope of Work | ollama/qwen2.5:7b | prompt 1446 chars
-10:29:19 INFO  praroopai.llm     <- draft:1. Scope of Work | 0.5s | 359 chars
-10:29:19 INFO  praroopai.agents  [draft] 1/7 1. Scope of Work    0.5s  359 chars
-```
-
-Use `LOG_LEVEL=TRACE` to dump the full prompt and full model reply.
 See **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** if anything looks stuck.
 
 ---
@@ -109,7 +113,7 @@ LLM_MODEL=qwen2.5:7b
 | `anthropic` | `claude-3-5-sonnet-20241022` | `ANTHROPIC_API_KEY` |
 | `openai_compatible` | any | vLLM / LM Studio / Together / Groq |
 
-Providers use each vendor's **native REST API** via `httpx` — no vendor SDKs required.
+Providers use each vendor's **native REST API** via `httpx` — no vendor SDKs.
 
 ---
 
@@ -119,26 +123,19 @@ Providers use each vendor's **native REST API** via `httpx` — no vendor SDKs r
              ┌──────────── mandatory findings ────────────┐
              ▼                                            │
 intake ──► derive ──► draft ──► compliance ──► reviewer ───┘
- (LLM)      (code)     (LLM)      (code)         (LLM)
+ (LLM)      (code)     (LLM)      (code)      (LLM + code)
                                      │
                                      └── clean ──► score ──► END
 ```
 
-* **intake** — turns a plain-language request into a structured brief
-* **derive** — computes EMD / PBG / LD cap / milestone amounts *deterministically*
-* **draft** — writes each section with the LLM, **one focused call per section**
-* **compliance** — the *independent critic*: runs every rule-pack in code
-* **reviewer** — rewrites only the failing sections, then loops back for a re-check
-* **score** — builds the scorecard and opens or closes the export gate
-
-The only cycle is **compliance ⇄ reviewer**. Because compliance is pure code, a
-"100% compliant" verdict is a fact, not a model opinion.
+The only cycle is **compliance ⇄ reviewer**. The reviewer asks the LLM first; anything
+still failing a deterministic rule is then built in code.
 
 ---
 
 ## The knowledge = bounded rule-packs
 
-Small, public, versioned **YAML** — *not* a document corpus.
+Small, public, versioned **YAML** — *not* a document corpus. 6 packs, 24 rules.
 
 | Pack | Covers | Example citation |
 |---|---|---|
@@ -162,7 +159,7 @@ Statutory ratios live in [`config/statutory.yaml`](config/statutory.yaml).
 | `GET` | `/api/structure/{doc_type}` | section outline for RFP or DPR |
 | `POST` | `/api/run` | run the pipeline (single JSON response) |
 | `POST` | `/api/run/stream` | **SSE** — `step` / `node` / `progress` / `ping` / `complete` |
-| `POST` | `/api/export` | DOCX download — **HTTP 423** if a mandatory finding is open |
+| `POST` | `/api/export` | DOCX — **HTTP 423** if a mandatory finding is open |
 
 ---
 
@@ -170,25 +167,27 @@ Statutory ratios live in [`config/statutory.yaml`](config/statutory.yaml).
 
 ```
 praroopai/
-├── .env.example              ← LLM provider, log level, pipeline tuning
+├── .env.example              ← provider, log level, pipeline tuning
 ├── config/statutory.yaml     ← statutory ratios (EMD/PBG/LD)
 ├── backend/
 │   ├── app.py                ← FastAPI: serves the UI + API
-│   ├── config.py             ← .env → typed Settings
 │   ├── logging_setup.py      ← TRACE/DEBUG/INFO logging
 │   ├── llm/                  ← provider-agnostic client (+ call timing)
-│   ├── core/                 ← derivations · rule_engine · context · scorecard
-│   └── services/             ← gated DOCX export
+│   └── core/
+│       ├── derivations.py    ← money computed here, plus canonical_amounts()
+│       ├── sanitize.py       ← markdown strip + money correction
+│       ├── rule_engine.py    ← YAML rules, safe evaluator
+│       ├── context.py        ← the variables rules read
+│       └── scorecard.py      ← RAG status + hard gate
 ├── agents/
 │   ├── graph.py              ← LangGraph StateGraph + threaded streaming
 │   ├── nodes.py              ← the six node functions
-│   ├── progress.py           ← live progress bus for long-running nodes
-│   ├── doc_structure.py      ← RFP (7) vs DPR (11) section sets
-│   └── prompts.py            ← all LLM prompts
-├── rule_packs/*.yaml         ← 6 packs, 24 rules
-├── frontend/                 ← no-build UI (HTML + CSS + JS) and icons
-├── tests/                    ← 24 tests + a mock LLM server
-└── docs/TROUBLESHOOTING.md
+│   ├── fallbacks.py          ← deterministic clause builders
+│   ├── progress.py           ← live progress bus
+│   └── doc_structure.py      ← RFP (7) vs DPR (11) section sets
+├── rule_packs/*.yaml
+├── frontend/                 ← no-build UI + icons
+└── tests/                    ← 28 tests + a mock LLM server
 ```
 
 ---
@@ -196,14 +195,15 @@ praroopai/
 ## Tests
 
 ```bash
-python tests/test_pipeline.py    # 14 — engine, maths, hard gate, DPR completeness
-python tests/test_providers.py   #  5 — all provider adapters route correctly
+python tests/test_pipeline.py    # 18 — maths, sanitisers, fallbacks, hard gate
+python tests/test_providers.py   #  5 — all provider adapters
 python tests/test_logging.py     #  5 — log levels and the progress bus
-python tests/run_e2e.py          # full pipeline for both RFP and DPR (mock LLM)
+MOCK_STUBBORN=1 python tests/run_e2e.py
 ```
 
-No API key or model needed — `tests/mock_llm_server.py` emulates Ollama locally.
-Set `MOCK_DELAY=1.5` to simulate a slow model and watch the progress stream.
+The E2E run uses a **deliberately stubborn mock model** that writes markdown, gets
+amounts wrong by 100×, and refuses to fix its penalty clause — and asserts the document
+still reaches 100% with no markdown or bad amounts leaking through.
 
 ---
 

@@ -1,8 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PraroopAI — AI DPR/RFP Drafting &amp; Compliance Assistant</title>
 <meta name="theme-color" content="#16224A" />
 <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -18,10 +17,8 @@
 <header class="topbar">
   <div class="brand">
     <img class="brand-logo" src="/static/assets/favicon-192.png" alt="PraroopAI" />
-    <div>
-      <h1 class="brand-name">PraroopAI <span class="brand-dev">प्रारूप</span></h1>
-      <p class="brand-sub">AI DPR / RFP Drafting &amp; Compliance Assistant</p>
-    </div>
+    <div><h1 class="brand-name">PraroopAI <span class="brand-dev">प्रारूप</span></h1>
+      <p class="brand-sub">AI DPR / RFP Drafting &amp; Compliance Assistant</p></div>
   </div>
   <div class="badges">
     <span class="pill" id="engineBadge"><i class="pdot"></i><span>engine…</span></span>
@@ -39,7 +36,6 @@
   <div class="step" data-step="score"><i class="si">✓</i>Scorecard</div>
 </nav>
 
-<!-- live progress bar -->
 <div class="progress-wrap" id="progressWrap" hidden>
   <div class="progress-bar"><span id="progressFill"></span></div>
   <div class="progress-text"><span id="progressText">Starting…</span><span id="progressTime" class="mono"></span></div>
@@ -55,18 +51,17 @@
         <div class="divider"><span>document</span></div>
         <div class="seg" id="docTypeSeg">
           <button type="button" class="seg-btn active" data-val="DPR">DPR</button>
-          <button type="button" class="seg-btn" data-val="RFP">RFP</button>
-        </div>
+          <button type="button" class="seg-btn" data-val="RFP">RFP</button></div>
         <input type="hidden" id="doc_type" value="DPR" />
         <label class="field"><span class="field-lbl">Estimated cost</span>
           <div class="money-wrap"><span class="rupee">₹</span><input id="project_cost" type="number" value="20000000" /></div>
           <span class="cost-words" id="costWords"></span></label>
         <div class="grid2">
           <label class="field"><span class="field-lbl">Duration <em>(months)</em></span><input id="duration_months" type="number" value="36" /></label>
-          <label class="field"><span class="field-lbl">Milestones</span><input id="num_milestones" type="number" value="3" min="1" max="6" /></label>
-        </div>
+          <label class="field"><span class="field-lbl">Milestones</span><input id="num_milestones" type="number" value="3" min="1" max="6" /></label></div>
         <label class="field"><span class="field-lbl">Data storage</span>
-          <select id="storage"><option value="on-premise">On-premise (State Data Centre)</option><option value="govt-cloud">Govt-approved cloud</option></select></label>
+          <select id="storage"><option value="on-premise">On-premise (State Data Centre)</option>
+            <option value="govt-cloud">Govt-approved cloud</option></select></label>
         <button id="runBtn" type="button" class="btn btn-primary">
           <span class="btn-ico">⚡</span><span class="btn-label">Generate &amp; Check Compliance</span></button>
         <p class="lock-note">Inputs are locked while the agents run.</p>
@@ -81,8 +76,7 @@
       <div class="tabs" id="tabs">
         <button class="tab active" data-tab="doc">Document</button>
         <button class="tab" data-tab="trace">Agent Trace</button>
-        <button class="tab" data-tab="log">Live Log</button>
-      </div>
+        <button class="tab" data-tab="log">Live Log</button></div>
       <div class="tabpane" id="pane-doc"><div id="sections" class="sections">
         <div class="placeholder"><div class="ph-emoji">📄</div><p>Your generated document will appear here,<br/>section by section.</p></div></div></div>
       <div class="tabpane" id="pane-trace" hidden><div id="trace" class="trace">
@@ -111,5 +105,4 @@
   <span>Compliance is a hard gate</span>
 </footer>
 <script src="/static/app.js"></script>
-</body>
-</html>
+</body></html>

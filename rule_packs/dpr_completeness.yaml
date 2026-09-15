@@ -3,66 +3,10 @@ label: "DPR Completeness"
 version: 2026.1
 authority: "State DPR appraisal checklist + MoSPI DPR guidelines"
 rules:
-  - id: DPR-001
-    title: "Executive Summary present"
-    citation: "State DPR appraisal checklist, Cl. 2.1"
-    applies_to: [DPR]
-    check: "has_section_executive_summary == True"
-    severity: mandatory
-    message: "A DPR must open with an Executive Summary."
-    clause: "The DPR shall begin with a summary of project, cost, duration and benefits."
-    fix_hint: "Add an Executive Summary."
-  - id: DPR-002
-    title: "Background & need analysis present"
-    citation: "MoSPI DPR guidelines, Need Assessment"
-    applies_to: [DPR]
-    check: "has_section_background == True"
-    severity: mandatory
-    message: "A DPR must justify the need for the project."
-    clause: "The DPR shall establish the present situation, the gap, and the justification."
-    fix_hint: "Add a Background & Need Analysis section."
-  - id: DPR-003
-    title: "Technical design present"
-    citation: "State DPR appraisal checklist, Cl. 4"
-    applies_to: [DPR]
-    check: "has_section_technical_design == True"
-    severity: mandatory
-    message: "A DPR must describe the technical design."
-    clause: "The DPR shall detail the technical solution, components and standards."
-    fix_hint: "Add a Technical Design section."
-  - id: DPR-004
-    title: "Implementation plan present"
-    citation: "State DPR appraisal checklist, Cl. 5"
-    applies_to: [DPR]
-    check: "has_section_implementation_plan == True"
-    severity: mandatory
-    message: "A DPR must include a phase-wise implementation plan."
-    clause: "Phase-wise implementation with milestones and timelines shall be presented."
-    fix_hint: "Add an Implementation Plan section."
-  - id: DPR-005
-    title: "Risk analysis present"
-    citation: "MoSPI DPR guidelines, Risk Assessment"
-    applies_to: [DPR]
-    check: "has_section_risk_analysis == True"
-    severity: mandatory
-    message: "A DPR must include a risk analysis with mitigation."
-    clause: "Technical, financial, operational and timeline risks shall be identified."
-    fix_hint: "Add a Risk Analysis section."
-  - id: DPR-006
-    title: "Expected outcomes present"
-    citation: "MoSPI DPR guidelines, Outcome Framework"
-    applies_to: [DPR]
-    check: "has_section_outcomes == True"
-    severity: mandatory
-    message: "A DPR must state expected outcomes and benefits."
-    clause: "The DPR shall state benefits, KPIs and the sustainability plan."
-    fix_hint: "Add an Expected Outcomes section."
-  - id: DPR-007
-    title: "O&M service levels present"
-    citation: "State DPR appraisal checklist, O&M"
-    applies_to: [DPR]
-    check: "has_section_sla == True"
-    severity: mandatory
-    message: "A DPR must define Operations & Maintenance service levels."
-    clause: "The O&M arrangement including uptime and response times shall be defined."
-    fix_hint: "Add an O&M Service Levels section."
+  - {id: DPR-001, title: "Executive Summary present", citation: "State DPR appraisal checklist, Cl. 2.1", applies_to: [DPR], check: "has_section_executive_summary == True", severity: mandatory, message: "A DPR must open with an Executive Summary.", clause: "The DPR shall begin with a summary of project, cost, duration and benefits.", fix_hint: "Add an Executive Summary."}
+  - {id: DPR-002, title: "Background & need analysis present", citation: "MoSPI DPR guidelines, Need Assessment", applies_to: [DPR], check: "has_section_background == True", severity: mandatory, message: "A DPR must justify the need for the project.", clause: "The DPR shall establish the present situation, the gap, and the justification.", fix_hint: "Add a Background & Need Analysis section."}
+  - {id: DPR-003, title: "Technical design present", citation: "State DPR appraisal checklist, Cl. 4", applies_to: [DPR], check: "has_section_technical_design == True", severity: mandatory, message: "A DPR must describe the technical design.", clause: "The DPR shall detail the technical solution, components and standards.", fix_hint: "Add a Technical Design section."}
+  - {id: DPR-004, title: "Implementation plan present", citation: "State DPR appraisal checklist, Cl. 5", applies_to: [DPR], check: "has_section_implementation_plan == True", severity: mandatory, message: "A DPR must include a phase-wise implementation plan.", clause: "Phase-wise implementation with milestones and timelines shall be presented.", fix_hint: "Add an Implementation Plan section."}
+  - {id: DPR-005, title: "Risk analysis present", citation: "MoSPI DPR guidelines, Risk Assessment", applies_to: [DPR], check: "has_section_risk_analysis == True", severity: mandatory, message: "A DPR must include a risk analysis with mitigation.", clause: "Technical, financial, operational and timeline risks shall be identified.", fix_hint: "Add a Risk Analysis section."}
+  - {id: DPR-006, title: "Expected outcomes present", citation: "MoSPI DPR guidelines, Outcome Framework", applies_to: [DPR], check: "has_section_outcomes == True", severity: mandatory, message: "A DPR must state expected outcomes and benefits.", clause: "The DPR shall state benefits, KPIs and the sustainability plan.", fix_hint: "Add an Expected Outcomes section."}
+  - {id: DPR-007, title: "O&M service levels present", citation: "State DPR appraisal checklist, O&M", applies_to: [DPR], check: "has_section_sla == True", severity: mandatory, message: "A DPR must define Operations & Maintenance service levels.", clause: "The O&M arrangement including uptime and response times shall be defined.", fix_hint: "Add an O&M Service Levels section."}
