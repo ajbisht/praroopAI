@@ -10,7 +10,7 @@ rules:
     check: "emd_percent >= 2 and emd_percent <= 3"
     severity: mandatory
     message: "Bid Security (EMD) must be 2-3% of the estimated project cost."
-    clause: "Per GFR 2017 Rule 170, Bid Security shall ordinarily be 2%-5% of the estimated value; this department adopts 2-3%."
+    clause: "Per GFR 2017 Rule 170, Bid Security shall ordinarily be 2%-5% of estimated value."
     fix_hint: "State EMD as 2% of project cost."
   - id: FIN-002
     title: "Performance Bank Guarantee"
@@ -19,7 +19,7 @@ rules:
     check: "pbg_percent >= 5 and pbg_percent <= 10"
     severity: mandatory
     message: "Performance Security (PBG) must be 5-10% of the contract value."
-    clause: "Per GFR 2017 Rule 171, Performance Security of 5%-10% of contract value shall be obtained from the successful bidder."
+    clause: "Per GFR 2017 Rule 171, Performance Security of 5%-10% shall be obtained."
     fix_hint: "State PBG as 5% of project cost."
   - id: FIN-003
     title: "Payments tied to milestones"
@@ -28,7 +28,7 @@ rules:
     check: "milestone_payments_sum_ok == True"
     severity: mandatory
     message: "Milestone payments must add up to the total project cost."
-    clause: "Payments shall be linked to verifiable deliverables; milestone payments must equal the contract value."
+    clause: "Payments shall be linked to verifiable deliverables summing to contract value."
     fix_hint: "Ensure milestone percentages sum to 100%."
   - id: FIN-004
     title: "Estimated cost provided"

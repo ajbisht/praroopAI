@@ -29,14 +29,38 @@ def _g(k: str, d: str = "") -> str:
     return os.environ.get(k, d)
 
 
+def _i(k: str, d: int) -> int:
+    try:
+        return int(_g(k, str(d)) or d)
+    except ValueError:
+        return d
+
+
+def _f(k: str, d: float) -> float:
+    try:
+        return float(_g(k, str(d)) or d)
+    except ValueError:
+        return d
+
+
 @dataclass
 class Settings:
+    # logging
+    log_level: str = _g("LOG_LEVEL", "INFO").upper()
+
+    # llm
     provider: str = _g("LLM_PROVIDER", "ollama").lower()
     model: str = _g("LLM_MODEL", "qwen2.5:7b")
-    temperature: float = float(_g("LLM_TEMPERATURE", "0.2") or 0.2)
-    max_tokens: int = int(_g("LLM_MAX_TOKENS", "1600") or 1600)
-    timeout: float = float(_g("LLM_REQUEST_TIMEOUT", "120") or 120)
+    temperature: float = _f("LLM_TEMPERATURE", 0.2)
+    max_tokens: int = _i("LLM_MAX_TOKENS", 1600)
+    timeout: float = _f("LLM_REQUEST_TIMEOUT", 120)
 
+    # pipeline tuning
+    section_retries: int = _i("SECTION_RETRIES", 2)
+    min_section_chars: int = _i("MIN_SECTION_CHARS", 180)
+    max_review_loops: int = _i("MAX_REVIEW_LOOPS", 3)
+
+    # endpoints & keys
     ollama_base_url: str = _g("OLLAMA_BASE_URL", "http://localhost:11434")
     openai_api_key: str = _g("OPENAI_API_KEY")
     openai_base_url: str = _g("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -48,7 +72,7 @@ class Settings:
     compat_api_key: str = _g("OPENAI_COMPATIBLE_API_KEY")
     compat_base_url: str = _g("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:8001/v1")
 
-    port: int = int(_g("PRAROOP_PORT", "8080") or 8080)
+    port: int = _i("PRAROOP_PORT", 8080)
 
 
 settings = Settings()

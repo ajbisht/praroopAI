@@ -10,7 +10,7 @@ rules:
     check: "has_section_data_security == True"
     severity: mandatory
     message: "A data security & retention clause is mandatory for IT projects."
-    clause: "Per IT Act 2000 Sec 43A, reasonable security practices and a retention policy are required."
+    clause: "Per IT Act 2000 Sec 43A, reasonable security practices and retention policy required."
     fix_hint: "Add a Data Security section."
   - id: SEC-002
     title: "Data residency"
@@ -19,5 +19,5 @@ rules:
     check: "data_residency_ok == True"
     severity: recommended
     message: "State whether data is on-premise or in a govt-approved cloud."
-    clause: "Government data should reside on-premise or on a MeitY-empanelled cloud within India."
+    clause: "Government data should reside on-premise or on a MeitY-empanelled cloud in India."
     fix_hint: "Declare on-premise or empanelled cloud storage."

@@ -40,8 +40,7 @@ DPR_SECTIONS = [
      "Capital cost and milestone-wise financial phasing. For EACH milestone give the "
      "deliverable, percentage and amount in Indian Rupees."),
     ("sla", "7. Operations & Maintenance (O&M) Service Levels",
-     "O&M plan: uptime %, response/resolution times in HOURS, maintenance period, "
-     "and service credits."),
+     "O&M plan: uptime %, response/resolution times in HOURS, maintenance period, credits."),
     ("data_security", "8. Data Security & Governance",
      "Storage, retention, access control, audit, and IT-Act compliance."),
     ("penalty", "9. Penalty & Liquidated Damages",

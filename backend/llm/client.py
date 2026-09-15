@@ -2,12 +2,19 @@
 from __future__ import annotations
 import json
 import re
+import time
 from typing import Any
 
 import httpx
 
 from backend.config import settings
+from backend.logging_setup import get_logger
 from .providers import PROVIDERS, LLMError
+
+log = get_logger("llm")
+
+# running totals, surfaced by /api/health for quick diagnosis
+STATS = {"calls": 0, "errors": 0, "total_seconds": 0.0}
 
 
 def available_providers() -> list[str]:
@@ -16,7 +23,8 @@ def available_providers() -> list[str]:
 
 def health() -> dict[str, Any]:
     prov = settings.provider
-    info = {"provider": prov, "model": settings.model, "ok": False, "detail": ""}
+    info: dict[str, Any] = {"provider": prov, "model": settings.model,
+                            "ok": False, "detail": "", "stats": dict(STATS)}
     if prov not in PROVIDERS:
         info["detail"] = f"Unknown provider '{prov}'"
         return info
@@ -24,7 +32,18 @@ def health() -> dict[str, Any]:
         if prov == "ollama":
             r = httpx.get(f"{settings.ollama_base_url.rstrip('/')}/api/tags", timeout=3)
             info["ok"] = r.status_code == 200
-            info["detail"] = "Ollama reachable" if info["ok"] else "Ollama not reachable"
+            if info["ok"]:
+                names = [m.get("name", "") for m in r.json().get("models", [])]
+                info["detail"] = "Ollama reachable"
+                info["installed_models"] = names
+                # a very common failure: the configured model isn't pulled
+                if names and not any(settings.model.split(":")[0] in n for n in names):
+                    info["ok"] = False
+                    info["detail"] = (f"Model '{settings.model}' not found in Ollama. "
+                                      f"Run: ollama pull {settings.model}")
+                    log.warning(info["detail"])
+            else:
+                info["detail"] = "Ollama not reachable"
         elif prov == "anthropic":
             info["ok"] = bool(settings.anthropic_api_key)
             info["detail"] = "key set" if info["ok"] else "ANTHROPIC_API_KEY missing"
@@ -39,20 +58,53 @@ def health() -> dict[str, Any]:
             info["detail"] = "configured"
     except Exception as e:
         info["detail"] = str(e)
+        log.warning("health check failed: %s", e)
     return info
 
 
-def chat(user: str, system: str = "", **kw) -> str:
+def chat(user: str, system: str = "", label: str = "llm", **kw) -> str:
+    """Single-turn chat. `label` shows in the logs so calls are traceable."""
     prov = settings.provider
     if prov not in PROVIDERS:
         raise LLMError(f"Unknown LLM_PROVIDER '{prov}'. Choose: {', '.join(PROVIDERS)}")
     msgs = ([{"role": "system", "content": system}] if system else []) + \
            [{"role": "user", "content": user}]
-    return PROVIDERS[prov](msgs, **kw).strip()
+
+    log.info("-> %s | %s/%s | prompt %d chars", label, prov, settings.model, len(user))
+    log.trace("--- %s SYSTEM ---\n%s", label, system)
+    log.trace("--- %s USER ---\n%s", label, user)
+
+    t0 = time.monotonic()
+    STATS["calls"] += 1
+    try:
+        out = PROVIDERS[prov](msgs, **kw).strip()
+    except httpx.TimeoutException:
+        STATS["errors"] += 1
+        dt = time.monotonic() - t0
+        log.error("<- %s TIMEOUT after %.1fs (LLM_REQUEST_TIMEOUT=%s). "
+                  "A smaller model or a higher timeout will help.",
+                  label, dt, settings.timeout)
+        raise
+    except Exception as e:
+        STATS["errors"] += 1
+        log.error("<- %s FAILED after %.1fs: %s", label, time.monotonic() - t0, e)
+        raise
+
+    dt = time.monotonic() - t0
+    STATS["total_seconds"] += dt
+    log.info("<- %s | %.1fs | %d chars", label, dt, len(out))
+    log.debug("   preview: %s", out[:160].replace("\n", " ") + ("…" if len(out) > 160 else ""))
+    log.trace("--- %s RESPONSE ---\n%s", label, out)
+    return out
 
 
-def chat_json(user: str, system: str = "", **kw) -> Any:
-    return _extract_json(chat(user, system=system, **kw))
+def chat_json(user: str, system: str = "", label: str = "llm", **kw) -> Any:
+    raw = chat(user, system=system, label=label, **kw)
+    try:
+        return _extract_json(raw)
+    except LLMError:
+        log.warning("%s returned unparseable JSON (%d chars)", label, len(raw))
+        raise
 
 
 def _extract_json(text: str) -> Any:

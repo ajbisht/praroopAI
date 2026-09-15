@@ -4,11 +4,9 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>PraroopAI — AI DPR/RFP Drafting &amp; Compliance Assistant</title>
-<meta name="description" content="Grounded, rule-anchored AI drafting for government DPRs and RFPs, with a hard compliance gate." />
 <meta name="theme-color" content="#16224A" />
 <link rel="icon" href="/favicon.ico" sizes="any" />
 <link rel="icon" type="image/png" sizes="32x32" href="/static/assets/favicon-32.png" />
-<link rel="icon" type="image/png" sizes="16x16" href="/static/assets/favicon-16.png" />
 <link rel="apple-touch-icon" href="/static/assets/apple-touch-icon.png" />
 <link rel="manifest" href="/static/assets/site.webmanifest" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,11 +15,9 @@
 <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-
-<!-- ════ Top bar ════ -->
 <header class="topbar">
   <div class="brand">
-    <img class="brand-logo" src="/static/assets/favicon-192.png" alt="PraroopAI logo" />
+    <img class="brand-logo" src="/static/assets/favicon-192.png" alt="PraroopAI" />
     <div>
       <h1 class="brand-name">PraroopAI <span class="brand-dev">प्रारूप</span></h1>
       <p class="brand-sub">AI DPR / RFP Drafting &amp; Compliance Assistant</p>
@@ -34,138 +30,86 @@
   </div>
 </header>
 
-<!-- ════ Stepper ════ -->
-<nav class="stepper" id="stepper" aria-label="pipeline progress">
-  <div class="step" data-step="intake"><i class="si">1</i>Intake</div>
-  <div class="sep"></div>
-  <div class="step" data-step="derive"><i class="si">2</i>Derive</div>
-  <div class="sep"></div>
-  <div class="step" data-step="draft"><i class="si">3</i>Draft</div>
-  <div class="sep"></div>
-  <div class="step" data-step="compliance"><i class="si">4</i>Compliance</div>
-  <div class="sep"></div>
-  <div class="step" data-step="reviewer"><i class="si">5</i>Review</div>
-  <div class="sep"></div>
+<nav class="stepper" id="stepper">
+  <div class="step" data-step="intake"><i class="si">1</i>Intake</div><div class="sep"></div>
+  <div class="step" data-step="derive"><i class="si">2</i>Derive</div><div class="sep"></div>
+  <div class="step" data-step="draft"><i class="si">3</i>Draft</div><div class="sep"></div>
+  <div class="step" data-step="compliance"><i class="si">4</i>Compliance</div><div class="sep"></div>
+  <div class="step" data-step="reviewer"><i class="si">5</i>Review</div><div class="sep"></div>
   <div class="step" data-step="score"><i class="si">✓</i>Scorecard</div>
 </nav>
 
-<main class="layout">
+<!-- live progress bar -->
+<div class="progress-wrap" id="progressWrap" hidden>
+  <div class="progress-bar"><span id="progressFill"></span></div>
+  <div class="progress-text"><span id="progressText">Starting…</span><span id="progressTime" class="mono"></span></div>
+</div>
 
-  <!-- ════ LEFT : intake ════ -->
+<main class="layout">
   <section class="panel">
     <header class="panel-head"><span class="ph-ico">📝</span>Project Details</header>
     <div class="panel-body">
       <form id="intakeForm" class="form" autocomplete="off">
-        <label class="field">
-          <span class="field-lbl">Describe the project <em>— the AI structures it</em></span>
-          <textarea id="request" rows="3" placeholder="e.g. RFP for 50 CCTV cameras across Dehradun, ₹2 crore, 3-year maintenance">I need a DPR for a city-wide CCTV surveillance project across Dehradun, budget around 2 crore, with 3 years of maintenance.</textarea>
-        </label>
-
+        <label class="field"><span class="field-lbl">Describe the project <em>— the AI structures it</em></span>
+          <textarea id="request" rows="3">I need a DPR for a city-wide CCTV surveillance project across Dehradun, budget around 2 crore, with 3 years of maintenance.</textarea></label>
         <div class="divider"><span>document</span></div>
-
-        <div class="seg" id="docTypeSeg" role="tablist">
+        <div class="seg" id="docTypeSeg">
           <button type="button" class="seg-btn active" data-val="DPR">DPR</button>
           <button type="button" class="seg-btn" data-val="RFP">RFP</button>
         </div>
         <input type="hidden" id="doc_type" value="DPR" />
-
-        <label class="field">
-          <span class="field-lbl">Estimated cost</span>
-          <div class="money-wrap">
-            <span class="rupee">₹</span>
-            <input id="project_cost" type="number" value="20000000" />
-          </div>
-          <span class="cost-words" id="costWords"></span>
-        </label>
-
+        <label class="field"><span class="field-lbl">Estimated cost</span>
+          <div class="money-wrap"><span class="rupee">₹</span><input id="project_cost" type="number" value="20000000" /></div>
+          <span class="cost-words" id="costWords"></span></label>
         <div class="grid2">
-          <label class="field">
-            <span class="field-lbl">Duration <em>(months)</em></span>
-            <input id="duration_months" type="number" value="36" />
-          </label>
-          <label class="field">
-            <span class="field-lbl">Milestones</span>
-            <input id="num_milestones" type="number" value="3" min="1" max="6" />
-          </label>
+          <label class="field"><span class="field-lbl">Duration <em>(months)</em></span><input id="duration_months" type="number" value="36" /></label>
+          <label class="field"><span class="field-lbl">Milestones</span><input id="num_milestones" type="number" value="3" min="1" max="6" /></label>
         </div>
-
-        <label class="field">
-          <span class="field-lbl">Data storage</span>
-          <select id="storage">
-            <option value="on-premise">On-premise (State Data Centre)</option>
-            <option value="govt-cloud">Govt-approved cloud</option>
-          </select>
-        </label>
-
+        <label class="field"><span class="field-lbl">Data storage</span>
+          <select id="storage"><option value="on-premise">On-premise (State Data Centre)</option><option value="govt-cloud">Govt-approved cloud</option></select></label>
         <button id="runBtn" type="button" class="btn btn-primary">
-          <span class="btn-ico">⚡</span><span class="btn-label">Generate &amp; Check Compliance</span>
-        </button>
-        <p class="lock-note" id="lockNote">Inputs are locked while the agents run.</p>
+          <span class="btn-ico">⚡</span><span class="btn-label">Generate &amp; Check Compliance</span></button>
+        <p class="lock-note">Inputs are locked while the agents run.</p>
       </form>
-
-      <div class="derived" id="derivedBox" hidden>
-        <h4>Auto-derived (statutory)</h4>
-        <dl id="derivedList"></dl>
-      </div>
+      <div class="derived" id="derivedBox" hidden><h4>Auto-derived (statutory)</h4><dl id="derivedList"></dl></div>
     </div>
   </section>
 
-  <!-- ════ CENTER : trace + document ════ -->
   <section class="panel">
-    <header class="panel-head">
-      <span class="ph-ico">🧩</span>Agent Pipeline &amp; Document
-      <span class="head-right" id="docMeta"></span>
-    </header>
+    <header class="panel-head"><span class="ph-ico">🧩</span>Agent Pipeline &amp; Document<span class="head-right" id="docMeta"></span></header>
     <div class="panel-body">
       <div class="tabs" id="tabs">
         <button class="tab active" data-tab="doc">Document</button>
         <button class="tab" data-tab="trace">Agent Trace</button>
+        <button class="tab" data-tab="log">Live Log</button>
       </div>
-
-      <div class="tabpane" id="pane-doc">
-        <div id="sections" class="sections">
-          <div class="placeholder">
-            <div class="ph-emoji">📄</div>
-            <p>Your generated document will appear here,<br/>section by section.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="tabpane" id="pane-trace" hidden>
-        <div id="trace" class="trace">
-          <div class="placeholder"><p>The agent trace will stream here live.</p></div>
-        </div>
-      </div>
+      <div class="tabpane" id="pane-doc"><div id="sections" class="sections">
+        <div class="placeholder"><div class="ph-emoji">📄</div><p>Your generated document will appear here,<br/>section by section.</p></div></div></div>
+      <div class="tabpane" id="pane-trace" hidden><div id="trace" class="trace">
+        <div class="placeholder"><p>The agent trace will stream here live.</p></div></div></div>
+      <div class="tabpane" id="pane-log" hidden><div id="log" class="log">
+        <div class="placeholder"><p>Per-section progress will stream here.</p></div></div></div>
     </div>
   </section>
 
-  <!-- ════ RIGHT : scorecard ════ -->
   <section class="panel">
     <header class="panel-head"><span class="ph-ico">🛡️</span>Compliance Scorecard</header>
     <div class="panel-body">
-      <div id="scorecard" class="scorecard">
-        <div class="placeholder">
-          <div class="ph-emoji">🛡️</div>
-          <p>Run the pipeline to see the<br/>live compliance scorecard.</p>
-        </div>
-      </div>
+      <div id="scorecard" class="scorecard"><div class="placeholder"><div class="ph-emoji">🛡️</div>
+        <p>Run the pipeline to see the<br/>live compliance scorecard.</p></div></div>
       <div id="findings" class="findings"></div>
       <button id="exportBtn" class="btn btn-export" disabled>
-        <span class="btn-ico">🔒</span><span class="btn-label">Export document</span>
-      </button>
+        <span class="btn-ico">🔒</span><span class="btn-label">Export document</span></button>
       <p class="export-note" id="exportNote"></p>
     </div>
   </section>
 </main>
 
 <footer class="footerbar">
-  <span>प्रारूप · <b>PraroopAI</b> — Built for Uttarakhand</span>
-  <i class="fdot"></i>
-  <span>Grounded · Rule-anchored · On-prem-ready</span>
-  <i class="fdot"></i>
+  <span>प्रारूप · <b>PraroopAI</b> — Built for Uttarakhand</span><i class="fdot"></i>
+  <span>Grounded · Rule-anchored · On-prem-ready</span><i class="fdot"></i>
   <span>Compliance is a hard gate</span>
 </footer>
-
 <script src="/static/app.js"></script>
 </body>
 </html>

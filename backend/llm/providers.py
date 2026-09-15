@@ -1,7 +1,11 @@
 """Provider adapters — native REST via httpx, no vendor SDKs."""
 from __future__ import annotations
 import httpx
+
 from backend.config import settings
+from backend.logging_setup import get_logger
+
+log = get_logger("llm.provider")
 
 
 class LLMError(RuntimeError):
@@ -23,9 +27,16 @@ def call_ollama(messages, **kw) -> str:
     body = {"model": settings.model, "messages": messages, "stream": False,
             "options": {"temperature": kw.get("temperature", settings.temperature),
                         "num_predict": kw.get("max_tokens", settings.max_tokens)}}
+    log.debug("POST %s model=%s timeout=%ss", url, settings.model, settings.timeout)
     r = httpx.post(url, json=body, timeout=settings.timeout)
     r.raise_for_status()
-    return r.json()["message"]["content"]
+    data = r.json()
+    # ollama reports token counts - very useful for spotting slow models
+    if "eval_count" in data:
+        log.debug("ollama tokens in=%s out=%s eval_ms=%s",
+                  data.get("prompt_eval_count"), data.get("eval_count"),
+                  round(data.get("eval_duration", 0) / 1e6))
+    return data["message"]["content"]
 
 
 def _openai_like(base_url, api_key, messages, **kw) -> str:
@@ -36,9 +47,14 @@ def _openai_like(base_url, api_key, messages, **kw) -> str:
     body = {"model": settings.model, "messages": messages,
             "temperature": kw.get("temperature", settings.temperature),
             "max_tokens": kw.get("max_tokens", settings.max_tokens)}
+    log.debug("POST %s model=%s", url, settings.model)
     r = httpx.post(url, json=body, headers=headers, timeout=settings.timeout)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    data = r.json()
+    if "usage" in data:
+        u = data["usage"]
+        log.debug("tokens in=%s out=%s", u.get("prompt_tokens"), u.get("completion_tokens"))
+    return data["choices"][0]["message"]["content"]
 
 
 def call_openai(m, **kw):
@@ -69,9 +85,14 @@ def call_anthropic(messages, **kw) -> str:
             "max_tokens": kw.get("max_tokens", settings.max_tokens),
             "temperature": kw.get("temperature", settings.temperature),
             "system": system, "messages": rest}
+    log.debug("POST %s model=%s", url, settings.model)
     r = httpx.post(url, json=body, headers=headers, timeout=settings.timeout)
     r.raise_for_status()
-    return "".join(p.get("text", "") for p in r.json().get("content", []))
+    data = r.json()
+    if "usage" in data:
+        u = data["usage"]
+        log.debug("tokens in=%s out=%s", u.get("input_tokens"), u.get("output_tokens"))
+    return "".join(p.get("text", "") for p in data.get("content", []))
 
 
 PROVIDERS = {"ollama": call_ollama, "openai": call_openai,

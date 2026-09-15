@@ -2,7 +2,10 @@
 Agent node functions.
   intake / draft / reviewer   -> LLM-driven
   derive / compliance / score -> deterministic (statutory numbers + rules)
-Framework-agnostic: graph.py wires them with LangGraph or a fallback runner.
+
+The drafting node makes one LLM call per section, which can take minutes on a
+small local model. It therefore emits a progress event after every section so
+the UI never looks frozen.
 """
 from __future__ import annotations
 import json
@@ -10,15 +13,16 @@ import re
 import time
 from typing import Any
 
+from backend.config import settings
 from backend.llm import client as llm
+from backend.logging_setup import get_logger
 from backend.core.derivations import derive
 from backend.core.context import build_context
 from backend.core.rule_engine import evaluate
 from backend.core.scorecard import build_scorecard
-from . import prompts, doc_structure
+from . import prompts, doc_structure, progress
 
-MAX_LOOPS = 3
-MIN_SECTION_CHARS = 180
+log = get_logger("agents")
 
 
 def _step(agent, kind, detail, **extra):
@@ -30,15 +34,22 @@ def _step(agent, kind, detail, **extra):
 def intake_node(state):
     raw = state.get("raw_input") or {}
     request = (state.get("request") or "").strip()
-    brief = {}
+    log.info("[intake] start (request=%d chars)", len(request))
+    progress.emit(type="progress", stage="intake", detail="Understanding the request…")
+
+    brief: Any = {}
     if request:
         try:
             brief = llm.chat_json(prompts.INTAKE_USER.format(request=request),
-                                  system=prompts.INTAKE_SYSTEM)
-        except Exception:
+                                  system=prompts.INTAKE_SYSTEM, label="intake")
+        except Exception as e:
+            log.warning("[intake] LLM failed (%s) - falling back to form inputs", e)
             brief = {}
     if not isinstance(brief, dict):
+        log.warning("[intake] model returned %s, not an object - ignoring",
+                    type(brief).__name__)
         brief = {}
+
     for k, v in raw.items():
         if v not in (None, "", 0) or k not in brief:
             brief[k] = v
@@ -53,6 +64,8 @@ def intake_node(state):
         brief["milestones"] = [
             {"name": f"Milestone {i+1}", "payment_pct": split[i], "has_penalty": False}
             for i in range(n)]
+
+    log.info("[intake] done -> %s '%s'", brief["doc_type"], brief["title"])
     return {"brief": brief,
             "trace": [_step("Intake Agent", "ai",
                             f"Structured brief for '{brief.get('title')}'")]}
@@ -61,13 +74,16 @@ def intake_node(state):
 # ── 2. DERIVE ───────────────────────────────────────────────────────
 def derive_node(state):
     d = derive(state["brief"])
+    log.info("[derive] cost=%s emd=%s pbg=%s ld=%s tender=%s",
+             d["money"]["project_cost"], d["money"]["emd_amount"],
+             d["money"]["pbg_amount"], d["money"]["ld_cap_amount"], d["tender_mode"])
     return {"derived": d,
             "trace": [_step("Derivation Engine", "code",
-                            f"EMD {d['money']['emd_amount']} · PBG {d['money']['pbg_amount']} · "
-                            f"{d['tender_mode']}")]}
+                            f"EMD {d['money']['emd_amount']} · "
+                            f"PBG {d['money']['pbg_amount']} · {d['tender_mode']}")]}
 
 
-# ── 3. DRAFT (one section per call) ─────────────────────────────────
+# ── 3. DRAFT (one LLM call per section) ─────────────────────────────
 def _draft_one(doc_type, title, guide, brief, derived):
     money = derived.get("money", {})
     user = prompts.SECTION_USER.format(
@@ -84,32 +100,59 @@ def _draft_one(doc_type, title, guide, brief, derived):
         ld_weekly=derived.get("ld_weekly_pct", 0.5),
         tender=derived.get("tender_mode", ""))
     system = prompts.SECTION_SYSTEM.format(doc_type=doc_type)
+
     body = ""
-    for attempt in range(2):
+    for attempt in range(max(1, settings.section_retries)):
         try:
-            out = llm.chat(user if attempt == 0 else
-                           user + "\n\nYour previous answer was too short. "
-                                  "Write a fuller, more detailed section.",
-                           system=system)
-        except Exception:
+            out = llm.chat(
+                user if attempt == 0 else
+                user + "\n\nYour previous answer was too short. "
+                       "Write a fuller, more detailed section.",
+                system=system, label=f"draft:{title[:28]}")
+        except Exception as e:
+            log.error("[draft] '%s' attempt %d failed: %s", title, attempt + 1, e)
             out = ""
         body = _clean(_coerce(out))
-        if len(body) >= MIN_SECTION_CHARS:
+        if len(body) >= settings.min_section_chars:
             break
+        if out:
+            log.debug("[draft] '%s' too short (%d chars), retrying", title, len(body))
     return body
 
 
 def draft_node(state):
     brief, derived = state["brief"], state["derived"]
     doc_type = (brief.get("doc_type") or "RFP").upper()
+    spec = doc_structure.sections_for(doc_type)
+    total = len(spec)
+    log.info("[draft] start - %d %s sections, up to %d LLM calls",
+             total, doc_type, total * settings.section_retries)
+    progress.emit(type="progress", stage="draft",
+                  detail=f"Drafting {total} {doc_type} sections…")
+
     sections = {}
-    for key, title, guide in doc_structure.sections_for(doc_type):
+    t_all = time.monotonic()
+    for i, (key, title, guide) in enumerate(spec, 1):
+        progress.emit(type="progress", stage="draft", current=i, total=total,
+                      detail=f"Drafting {i}/{total} — {title}")
+        t0 = time.monotonic()
         body = _repair_amounts(_normalize_currency(
             _draft_one(doc_type, title, guide, brief, derived)))
+        dt = time.monotonic() - t0
         if body.strip():
             sections[key] = {"title": title, "body": body.strip()}
+            log.info("[draft] %d/%d %-46s %5.1fs  %d chars", i, total, title, dt, len(body))
+            progress.emit(type="progress", stage="draft", current=i, total=total,
+                          detail=f"✓ {i}/{total} — {title} ({dt:.0f}s)")
+        else:
+            log.warning("[draft] %d/%d %-46s %5.1fs  EMPTY - compliance will flag it",
+                        i, total, title, dt)
+            progress.emit(type="progress", stage="draft", current=i, total=total,
+                          detail=f"⚠ {i}/{total} — {title} came back empty")
+
     _sync_penalties(derived, sections.get("penalty", {}).get("body", ""))
-    total = len(doc_structure.keys_for(doc_type))
+    log.info("[draft] done - %d/%d sections in %.1fs",
+             len(sections), total, time.monotonic() - t_all)
     return {"sections": sections,
             "trace": [_step("Drafting Agent", "ai",
                             f"Drafted {len(sections)}/{total} {doc_type} sections")]}
@@ -117,11 +160,17 @@ def draft_node(state):
 
 # ── 4. COMPLIANCE (deterministic critic) ────────────────────────────
 def compliance_node(state):
+    doc_type = state["brief"].get("doc_type", "RFP")
+    progress.emit(type="progress", stage="compliance", detail="Auditing against rule-packs…")
     project = {"brief": state["brief"], "derived": state["derived"],
                "sections": state.get("sections", {})}
-    findings = evaluate(build_context(project),
-                        doc_type=state["brief"].get("doc_type", "RFP"))
+    findings = evaluate(build_context(project), doc_type=doc_type)
     mand = sum(1 for f in findings if f["severity"] == "mandatory")
+    if findings:
+        log.info("[compliance] %d findings (%d mandatory): %s", len(findings), mand,
+                 ", ".join(f["rule_id"] for f in findings))
+    else:
+        log.info("[compliance] clean - no findings")
     return {"findings": findings,
             "trace": [_step("Compliance Agent", "code",
                             f"{len(findings)} findings ({mand} mandatory)",
@@ -133,6 +182,10 @@ def reviewer_node(state):
     brief, derived = state["brief"], state["derived"]
     doc_type = (brief.get("doc_type") or "RFP").upper()
     fixable = [f for f in state["findings"] if f["severity"] == "mandatory"]
+    log.info("[reviewer] fixing %d mandatory findings (loop %d)",
+             len(fixable), state.get("loop_count", 0) + 1)
+    progress.emit(type="progress", stage="reviewer",
+                  detail=f"Fixing {len(fixable)} compliance issue(s)…")
     try:
         fix_map = llm.chat_json(
             prompts.REVIEW_USER.format(
@@ -140,8 +193,9 @@ def reviewer_node(state):
                 brief_json=json.dumps(brief, ensure_ascii=False),
                 money_json=json.dumps(derived.get("money", {}), ensure_ascii=False),
                 findings_json=json.dumps(fixable, ensure_ascii=False)),
-            system=prompts.REVIEW_SYSTEM.format(doc_type=doc_type))
-    except Exception:
+            system=prompts.REVIEW_SYSTEM.format(doc_type=doc_type), label="reviewer")
+    except Exception as e:
+        log.error("[reviewer] LLM failed: %s", e)
         fix_map = {}
     if not isinstance(fix_map, dict):
         fix_map = {}
@@ -151,12 +205,14 @@ def reviewer_node(state):
     fixed = []
     for key, val in fix_map.items():
         if key not in titles:
+            log.debug("[reviewer] ignoring unknown section key '%s'", key)
             continue
         body = _repair_amounts(_normalize_currency(_clean(_coerce(val))))
         if body.strip():
             sections[key] = {"title": titles[key], "body": body.strip()}
             fixed.append(key)
     _sync_penalties(derived, sections.get("penalty", {}).get("body", ""))
+    log.info("[reviewer] rewrote: %s", ", ".join(fixed) if fixed else "nothing")
     return {"sections": sections, "loop_count": state.get("loop_count", 0) + 1,
             "trace": [_step("Reviewer Agent", "ai",
                             f"Fixed: {', '.join(fixed) if fixed else 'none'}")]}
@@ -164,8 +220,12 @@ def reviewer_node(state):
 
 def route_after_compliance(state) -> str:
     mand = sum(1 for f in state.get("findings", []) if f["severity"] == "mandatory")
-    if mand > 0 and state.get("loop_count", 0) < MAX_LOOPS:
+    loops = state.get("loop_count", 0)
+    if mand > 0 and loops < settings.max_review_loops:
         return "reviewer"
+    if mand > 0:
+        log.warning("[route] %d mandatory findings remain after %d loops - stopping",
+                    mand, loops)
     return "end"
 
 
@@ -176,6 +236,8 @@ def score_node(state):
     order = doc_structure.keys_for(doc_type)
     secs = state.get("sections", {})
     ordered = {k: secs[k] for k in order if k in secs}
+    log.info("[score] overall %d%% | mandatory_open=%d | can_finalize=%s",
+             sc["overall_percent"], sc["mandatory_open"], sc["can_finalize"])
     return {"sections": ordered, "scorecard": sc,
             "trace": [_step("Coordinator", "done",
                             f"Overall {sc['overall_percent']}% · "
@@ -184,7 +246,6 @@ def score_node(state):
 
 # ── helpers ─────────────────────────────────────────────────────────
 def _coerce(value, depth=0) -> str:
-    """Flatten dict/list model output into readable prose."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -225,7 +286,6 @@ def _human(k: str) -> str:
 
 
 def _clean(text: str) -> str:
-    """Strip code fences, JSON wrappers and echoed headings."""
     if not text:
         return ""
     t = text.strip()
@@ -245,7 +305,7 @@ _AMT = re.compile(r"\u20b9\s?([\d,]+)\s*\(\s*\u20b9?\s*([\d.,]+)\s*(crore|lakh)\
 
 
 def _repair_amounts(text: str) -> str:
-    """Recompute any '(₹X crore/lakh)' label from the rupee figure before it."""
+    """Recompute any '(Rs X crore/lakh)' label from the figure before it."""
     if not text:
         return text
 

@@ -1,11 +1,10 @@
-"""Context Builder — flattens the project into variables rules read."""
+"""Context Builder - flattens the project into variables rules read."""
 from __future__ import annotations
 from typing import Any
 
 
 def build_context(project: dict[str, Any]) -> dict[str, Any]:
-    brief = project.get("brief", {})
-    derived = project.get("derived", {})
+    brief = project.get("brief", {}); derived = project.get("derived", {})
     sections = project.get("sections", {})
 
     def has(k):
@@ -15,7 +14,6 @@ def build_context(project: dict[str, Any]) -> dict[str, Any]:
     milestones = derived.get("milestones", brief.get("milestones", []) or [])
     pay_sum = sum(float(m.get("payment_pct", 0) or 0) for m in milestones)
     every_pen = bool(milestones) and all(bool(m.get("has_penalty")) for m in milestones)
-
     cost = float(derived.get("project_cost", brief.get("project_cost", 0) or 0))
     threshold = derived.get("open_tender_threshold", 5000000)
     tender_ok = (cost <= threshold) or (derived.get("tender_mode") == "Open Tender")
@@ -44,18 +42,13 @@ def build_context(project: dict[str, Any]) -> dict[str, Any]:
         "has_section_implementation_plan": has("implementation_plan"),
         "has_section_risk_analysis": has("risk_analysis"),
         "has_section_outcomes": has("outcomes"),
-        "penalty_text_ok": _penalty_ok(sections),
-    }
+        "penalty_text_ok": _penalty_ok(sections)}
 
 
 def _penalty_ok(sections: dict[str, Any]) -> bool:
-    """A real penalty clause states a rate, a cap, and covers each milestone."""
     body = str((sections.get("penalty") or {}).get("body", "")).lower()
-    if len(body) < 80:
-        return False
-    rate = ("%" in body) and any(w in body for w in
-                                ("per week", "per day", "weekly", "daily"))
-    cap = any(w in body for w in ("cap", "not exceed", "maximum"))
-    each = any(w in body for w in ("each milestone", "every milestone",
-                                   "per milestone", "each delivery"))
+    if len(body) < 80: return False
+    rate = ("%" in body) and any(w in body for w in ("per week","per day","weekly","daily"))
+    cap = any(w in body for w in ("cap","not exceed","maximum"))
+    each = any(w in body for w in ("each milestone","every milestone","per milestone","each delivery"))
     return rate and cap and each

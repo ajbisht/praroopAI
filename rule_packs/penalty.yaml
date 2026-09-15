@@ -10,7 +10,7 @@ rules:
     check: "ld_percent <= 10"
     severity: mandatory
     message: "Liquidated damages must not exceed 10% of the contract value."
-    clause: "Per GFR 2017 Rule 175, liquidated damages ordinarily shall not exceed 10% of contract value."
+    clause: "Per GFR 2017 Rule 175, LD ordinarily shall not exceed 10% of contract value."
     fix_hint: "Cap liquidated damages at 10%."
   - id: PEN-002
     title: "Penalty tied to each milestone"
@@ -19,7 +19,7 @@ rules:
     check: "every_milestone_has_penalty == True"
     severity: mandatory
     message: "Each delivery milestone must define a penalty for delay."
-    clause: "A delay penalty must be specified for EACH milestone to make delays enforceable."
+    clause: "A delay penalty must be specified for EACH milestone to be enforceable."
     fix_hint: "Add a delay penalty for every milestone."
   - id: PEN-003
     title: "Grace period defined"
@@ -37,5 +37,5 @@ rules:
     check: "penalty_text_ok == True"
     severity: mandatory
     message: "The penalty clause must state a rate, an overall cap, and cover each milestone."
-    clause: "To be enforceable, the LD clause must specify the rate, the maximum cap, and apply per milestone."
-    fix_hint: "Rewrite with LD rate, cap in rupees, grace period, and per-milestone penalty."
+    clause: "To be enforceable the LD clause must specify rate, cap, and apply per milestone."
+    fix_hint: "Rewrite with LD rate, cap in rupees, grace period, per-milestone penalty."

@@ -12,6 +12,10 @@ fetch("/api/health").then(r => r.json()).then(d => {
   lb.classList.add(llm.ok ? "ok" : "off");
   lb.querySelector("span").textContent = `${llm.provider || "llm"} · ${llm.model || "?"}`;
   lb.title = llm.detail || "";
+  if (!llm.ok) {
+    logLine(`LLM not ready: ${llm.detail}`, "warn");
+    showTab("log");
+  }
 }).catch(() => {});
 
 /* ── cost helper ────────────────────────────────────── */
@@ -25,24 +29,22 @@ $("project_cost").addEventListener("input", e =>
   $("costWords").textContent = inWords(e.target.value));
 $("costWords").textContent = inWords($("project_cost").value);
 
-/* ── doc-type segmented control ─────────────────────── */
-document.querySelectorAll("#docTypeSeg .seg-btn").forEach(b => {
+/* ── doc type + tabs ────────────────────────────────── */
+document.querySelectorAll("#docTypeSeg .seg-btn").forEach(b =>
   b.addEventListener("click", () => {
     document.querySelectorAll("#docTypeSeg .seg-btn").forEach(x => x.classList.remove("active"));
     b.classList.add("active");
     $("doc_type").value = b.dataset.val;
-  });
-});
+  }));
 
-/* ── tabs ───────────────────────────────────────────── */
-document.querySelectorAll("#tabs .tab").forEach(t => {
-  t.addEventListener("click", () => {
-    document.querySelectorAll("#tabs .tab").forEach(x => x.classList.remove("active"));
-    t.classList.add("active");
-    $("pane-doc").hidden = t.dataset.tab !== "doc";
-    $("pane-trace").hidden = t.dataset.tab !== "trace";
-  });
-});
+function showTab(name) {
+  document.querySelectorAll("#tabs .tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.tab === name));
+  ["doc", "trace", "log"].forEach(k => $("pane-" + k).hidden = k !== name);
+}
+document.querySelectorAll("#tabs .tab").forEach(t =>
+  t.addEventListener("click", () => showTab(t.dataset.tab)));
+
 function setTabCount(tab, n) {
   const el = document.querySelector(`#tabs .tab[data-tab="${tab}"]`);
   let c = el.querySelector(".cnt");
@@ -64,12 +66,38 @@ function markStep(node) {
   });
   el.classList.remove("done"); el.classList.add("active");
 }
-const stepperAllDone = () =>
-  document.querySelectorAll(".step").forEach(s => {
-    s.classList.remove("active"); s.classList.add("done");
-  });
+const stepperAllDone = () => document.querySelectorAll(".step").forEach(s => {
+  s.classList.remove("active"); s.classList.add("done");
+});
 
-/* ── lock inputs while running ──────────────────────── */
+/* ── progress bar + live log ────────────────────────── */
+let t0 = 0, timer = null, logCount = 0;
+function startTimer() {
+  t0 = Date.now();
+  timer = setInterval(() => {
+    const s = Math.round((Date.now() - t0) / 1000);
+    $("progressTime").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }, 1000);
+}
+function stopTimer() { if (timer) clearInterval(timer); timer = null; }
+
+function setProgress(pct, text) {
+  if (pct != null) $("progressFill").style.width = `${pct}%`;
+  if (text) $("progressText").textContent = text;
+}
+function logLine(text, cls = "") {
+  if (logCount === 0) $("log").innerHTML = "";
+  const el = document.createElement("div");
+  el.className = `log-line ${cls}`;
+  const t = t0 ? ((Date.now() - t0) / 1000).toFixed(1).padStart(5) : "  0.0";
+  el.innerHTML = `<span class="t">${t}s</span><span>${esc(text)}</span>`;
+  $("log").appendChild(el);
+  $("log").scrollTop = $("log").scrollHeight;
+  logCount++;
+  setTabCount("log", logCount);
+}
+
+/* ── lock inputs ────────────────────────────────────── */
 function setLocked(locked) {
   $("intakeForm").classList.toggle("locked", locked);
   FORM_IDS.forEach(id => { const el = $(id); if (el) el.disabled = locked; });
@@ -100,12 +128,16 @@ function addTraceStep(s) {
 
 /* ── run ────────────────────────────────────────────── */
 async function runPipeline() {
-  setLocked(true); resetStepper(); traceCount = 0;
-  $("trace").innerHTML = ""; $("derivedBox").hidden = true;
-  $("findings").innerHTML = ""; $("exportNote").textContent = "";
-  $("docMeta").textContent = "";
+  setLocked(true); resetStepper();
+  traceCount = 0; logCount = 0;
+  $("trace").innerHTML = ""; $("log").innerHTML = "";
+  $("derivedBox").hidden = true; $("findings").innerHTML = "";
+  $("exportNote").textContent = ""; $("docMeta").textContent = "";
   $("exportBtn").disabled = true;
   $("exportBtn").querySelector(".btn-ico").textContent = "🔒";
+  $("progressWrap").hidden = false;
+  setProgress(2, "Starting…");
+  startTimer();
   $("sections").innerHTML =
     '<div class="placeholder"><div class="spinner"></div><p>Drafting in progress…</p></div>';
   $("scorecard").innerHTML =
@@ -140,21 +172,61 @@ async function runPipeline() {
         const line = p.trim();
         if (!line.startsWith("data:")) continue;
         const evt = JSON.parse(line.slice(5).trim());
-        if (evt.type === "step") addTraceStep(evt.step);
-        else if (evt.type === "node") { if (STEP_ORDER.includes(evt.name)) markStep(evt.name); }
-        else if (evt.type === "error") throw new Error(evt.message);
-        else if (evt.type === "complete") final = evt.result;
+        handleEvent(evt);
+        if (evt.type === "complete") final = evt.result;
+        if (evt.type === "error") throw new Error(evt.message);
       }
     }
     $("trace").querySelectorAll(".trace-item.live").forEach(e => e.classList.remove("live"));
     stepperAllDone();
+    setProgress(100, "Complete");
     if (final) render(final);
   } catch (e) {
+    logLine(`ERROR: ${e.message}`, "warn");
+    showTab("log");
     $("scorecard").innerHTML = `<div class="placeholder"><p>⚠️ ${esc(e.message)}</p></div>`;
-    $("sections").innerHTML = `<div class="placeholder"><p>⚠️ Generation failed.</p></div>`;
+    $("sections").innerHTML = `<div class="placeholder"><p>⚠️ Generation failed — see Live Log.</p></div>`;
+    setProgress(100, "Failed");
     resetStepper();
   } finally {
+    stopTimer();
     setLocked(false);
+  }
+}
+
+/* map stream events to UI */
+function handleEvent(evt) {
+  switch (evt.type) {
+    case "progress": {
+      const d = evt.detail || "";
+      // light up the stage we are *currently inside*, not the last finished node
+      if (evt.stage && STEP_ORDER.includes(evt.stage)) markStep(evt.stage);
+      if (evt.current && evt.total) {
+        // drafting occupies 25%..75% of the bar
+        setProgress(25 + Math.round(50 * evt.current / evt.total), d);
+      } else {
+        setProgress(null, d);
+      }
+      logLine(d, d.startsWith("✓") ? "ok" : d.startsWith("⚠") ? "warn" : "work");
+      break;
+    }
+    case "step":
+      addTraceStep(evt.step);
+      logLine(`[${evt.step.agent}] ${evt.step.detail}`);
+      break;
+    case "node":
+      if (STEP_ORDER.includes(evt.name)) {
+        markStep(evt.name);
+        const base = { intake: 10, derive: 22, draft: 76, compliance: 84, reviewer: 90, score: 98 };
+        setProgress(base[evt.name] ?? null, null);
+      }
+      break;
+    case "ping":
+      setProgress(null, `Still working… (${evt.elapsed}s)`);
+      break;
+    case "error":
+      logLine(`ERROR: ${evt.message}`, "warn");
+      break;
   }
 }
 
@@ -164,7 +236,6 @@ function render(data) {
   $("docMeta").textContent =
     `${brief.doc_type || ""} · ${money.project_cost || ""} · ${brief.duration_months || 0} months`;
 
-  // derived box
   const rows = [
     ["Total cost", money.project_cost], ["EMD (2%)", money.emd_amount],
     ["PBG (5%)", money.pbg_amount], ["LD cap (10%)", money.ld_cap_amount],
@@ -176,15 +247,13 @@ function render(data) {
     $("derivedBox").hidden = false;
   }
 
-  // sections
   const secs = Object.values(data.sections || {});
   setTabCount("doc", secs.length);
   $("sections").innerHTML = secs.length
     ? secs.map(s => `<article class="section"><h4>${esc(s.title)}</h4>
         <div class="body">${fmtBody(s.body)}</div></article>`).join("")
-    : '<div class="placeholder"><p>No sections generated.</p></div>';
+    : '<div class="placeholder"><p>No sections generated — see Live Log.</p></div>';
 
-  // scorecard
   const sc = data.scorecard || {};
   const ready = !!sc.can_finalize;
   const cls = ready ? "green" : (sc.mandatory_open ? "red" : "amber");
@@ -216,7 +285,6 @@ function render(data) {
     : `${sc.mandatory_open || 0} mandatory issue(s) block export.`;
 }
 
-/* body: paragraphs, bullets, highlighted amounts */
 function fmtBody(text) {
   const lines = String(text || "").split("\n");
   let html = "", inList = false;
@@ -239,16 +307,13 @@ const hi = s => s.replace(/(₹[\d,]+(?:\s*\(₹[\d.]+\s*(?:crore|lakh)\))?)/g,
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-/* ── export ─────────────────────────────────────────── */
 async function doExport() {
   const res = await fetch("/api/export", { method: "POST" });
   if (!res.ok) { alert("Export blocked: " + (await res.text())); return; }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = `PraroopAI_${$("doc_type").value}.docx`;
-  a.click();
+  a.href = url; a.download = `PraroopAI_${$("doc_type").value}.docx`; a.click();
   URL.revokeObjectURL(url);
 }
 

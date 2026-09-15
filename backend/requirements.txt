@@ -1,14 +1,8 @@
-# Core
 fastapi>=0.110
 uvicorn[standard]>=0.29
 pydantic>=2.0
 pyyaml>=6.0
 httpx>=0.27
 python-docx>=1.1
-
-# Agent orchestration
 langgraph>=0.2.0
 langchain-core>=0.2.0
-
-# No vendor SDKs needed — providers use native REST via httpx.
-# Switch provider by editing .env (LLM_PROVIDER=ollama|openai|openrouter|anthropic).

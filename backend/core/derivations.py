@@ -1,13 +1,8 @@
-"""
-Derivation Engine — computes statutory figures from officer numbers.
-Ratios come from config/statutory.yaml. Deterministic: the LLM never
-computes money, it only copies the pre-formatted strings produced here.
-"""
+"""Derivation Engine - statutory figures computed in code, never by the LLM."""
 from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-
 import yaml
 
 CONFIG = Path(__file__).resolve().parents[2] / "config" / "statutory.yaml"
@@ -19,9 +14,7 @@ def _cfg() -> dict[str, Any]:
 
 
 def _indian_group(n: float) -> str:
-    n = int(round(n))
-    sign = "-" if n < 0 else ""
-    s = str(abs(n))
+    n = int(round(n)); sign = "-" if n < 0 else ""; s = str(abs(n))
     if len(s) <= 3:
         return sign + s
     last3, rest, parts = s[-3:], s[:-3], []
@@ -37,9 +30,8 @@ def rupees(n: float) -> str:
 
 
 def inr(n: float) -> str:
-    """Authoritative money string: '₹20,00,00,000 (₹20.00 crore)'."""
-    n = float(n or 0)
-    base = rupees(n)
+    """Authoritative money string: 'Rs20,00,00,000 (Rs20.00 crore)'."""
+    n = float(n or 0); base = rupees(n)
     if abs(n) >= 1_00_00_000:
         return f"{base} (\u20b9{n/1_00_00_000:.2f} crore)"
     if abs(n) >= 1_00_000:
@@ -51,7 +43,6 @@ def derive(brief: dict[str, Any]) -> dict[str, Any]:
     c = _cfg()
     cost = float(brief.get("project_cost", 0) or 0)
     duration = int(brief.get("duration_months", 0) or 0)
-
     milestones = brief.get("milestones") or []
     if not milestones:
         milestones = [{"name": nm, "payment_pct": pct, "has_penalty": False}
@@ -59,20 +50,14 @@ def derive(brief: dict[str, Any]) -> dict[str, Any]:
                                          c["default_milestone_split"])]
     for m in milestones:
         m["payment_amount"] = round(cost * float(m.get("payment_pct", 0) or 0) / 100)
-
     emd = round(cost * c["emd_percent"] / 100)
     pbg = round(cost * c["pbg_percent"] / 100)
     ld = round(cost * c["ld_cap_percent"] / 100)
-
     money = {
-        "project_cost": inr(cost),
-        "emd_amount": inr(emd),
-        "pbg_amount": inr(pbg),
-        "ld_cap_amount": inr(ld),
-        "milestones": [f"{m['name']}: {m.get('payment_pct', 0)}% = {inr(m.get('payment_amount', 0))}"
-                       for m in milestones],
-    }
-
+        "project_cost": inr(cost), "emd_amount": inr(emd),
+        "pbg_amount": inr(pbg), "ld_cap_amount": inr(ld),
+        "milestones": [f"{m['name']}: {m.get('payment_pct',0)}% = {inr(m.get('payment_amount',0))}"
+                       for m in milestones]}
     return {
         "project_cost": cost, "duration_months": duration,
         "milestones": milestones, "money": money,
@@ -81,7 +66,5 @@ def derive(brief: dict[str, Any]) -> dict[str, Any]:
         "uptime_percent": float(brief.get("uptime_percent", c["default_uptime_percent"])),
         "grace_period_days": int(brief.get("grace_period_days", c["default_grace_days"])),
         "emd_amount": emd, "pbg_amount": pbg, "ld_cap_amount": ld,
-        "tender_mode": ("Open Tender" if cost > c["open_tender_threshold"]
-                        else "Limited Tender"),
-        "open_tender_threshold": c["open_tender_threshold"],
-    }
+        "tender_mode": ("Open Tender" if cost > c["open_tender_threshold"] else "Limited Tender"),
+        "open_tender_threshold": c["open_tender_threshold"]}

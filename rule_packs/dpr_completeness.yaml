@@ -46,7 +46,7 @@ rules:
     check: "has_section_risk_analysis == True"
     severity: mandatory
     message: "A DPR must include a risk analysis with mitigation."
-    clause: "Technical, financial, operational and timeline risks shall be identified with mitigations."
+    clause: "Technical, financial, operational and timeline risks shall be identified."
     fix_hint: "Add a Risk Analysis section."
   - id: DPR-006
     title: "Expected outcomes present"

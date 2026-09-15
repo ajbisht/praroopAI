@@ -28,7 +28,7 @@ rules:
     check: "tender_mode_ok == True"
     severity: mandatory
     message: "Tender mode must match the cost slab (open tender above Rs 50 lakh)."
-    clause: "Per GFR 2017 Rule 161, procurements above threshold require Advertised (Open) Tender Enquiry."
+    clause: "Per GFR 2017 Rule 161, procurements above threshold require Open Tender Enquiry."
     fix_hint: "Use Open Tender above Rs 50 lakh."
   - id: GFR-004
     title: "Evaluation criteria present"
